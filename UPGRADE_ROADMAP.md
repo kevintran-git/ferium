@@ -54,8 +54,9 @@ Full writeup of the comparison lives in Claude's memory
       name, or file name, not just numeric IDs) — commit `61cbd99`.
 
 ### Phase 1 — Low-risk wins
-- [ ] Manifest-ID-based duplicate JAR cleanup (bug #4), ported from modmgr's
-      approach but covering Fabric/Forge/NeoForge/Quilt.
+- [x] Manifest-ID-based duplicate JAR cleanup (bug #4), ported from modmgr's
+      approach but covering Fabric/Forge/NeoForge/Quilt
+      (`libium/src/manifest.rs`, wired into `src/download.rs::download`).
 - [ ] HTTP connect/read timeouts on the shared client (bug #8).
 
 ### Phase 2 — Network resilience

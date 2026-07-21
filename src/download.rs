@@ -6,7 +6,7 @@ use fs_extra::{
     file::{move_file, CopyOptions as FileCopyOptions},
 };
 use indicatif::ProgressBar;
-use libium::{iter_ext::IterExt as _, upgrade::DownloadData};
+use libium::{iter_ext::IterExt as _, manifest::dedupe_by_manifest_id, upgrade::DownloadData};
 use parking_lot::Mutex;
 use std::{
     ffi::OsString,
@@ -46,24 +46,17 @@ pub async fn clean(
     create_dir_all(directory.join(".old"))?;
     for file in read_dir(directory)? {
         let file = file?;
-        // If it's a file
         if file.file_type()?.is_file() {
             let filename = file.file_name();
             let filename = filename.to_string_lossy();
             let filename = filename.as_ref();
-            // If it is already downloaded
             if let Some(index) = to_download
                 .iter()
                 .position(|thing| filename == thing.filename())
             {
-                // Don't download it
                 to_download.remove(index);
-            // Likewise, if it is already installed
             } else if let Some(index) = to_install.iter().position(|thing| filename == thing.0) {
-                // Don't install it
                 to_install.remove(index);
-            // Or else, move the file to `directory`/.old
-            // If the file is a `.part` file or if the move failed, delete the file
             } else if filename.ends_with("part")
                 || move_file(
                     file.path(),
@@ -158,6 +151,20 @@ pub async fn download(
             "{} Installed          {}",
             *TICK,
             name.to_string_lossy().dimmed()
+        );
+    }
+
+    let deduped = dedupe_by_manifest_id(&output_dir)?;
+    if !deduped.is_empty() {
+        println!(
+            "{}",
+            format!(
+                "WARNING: {} duplicate mod jars were found and moved to .old {}",
+                deduped.len(),
+                deduped.iter().display(", ")
+            )
+            .yellow()
+            .bold()
         );
     }
 
