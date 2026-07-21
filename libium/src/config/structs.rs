@@ -47,13 +47,11 @@ pub struct Profile {
     /// The directory to download mod files to
     pub output_dir: PathBuf,
 
-    // There will be no filters when reading a v4 config
     #[serde(default)]
     pub filters: Vec<Filter>,
 
     pub mods: Vec<Mod>,
 
-    // Kept for backwards compatibility reasons (i.e. migrating from a v4 config)
     #[serde(skip_serializing)]
     game_version: Option<String>,
     #[serde(skip_serializing)]
@@ -129,8 +127,6 @@ pub struct Mod {
     pub name: String,
     pub identifier: ModIdentifier,
 
-    // Is an `Option` for backwards compatibility reasons,
-    // since the slug field didn't exist in older ferium versions
     #[serde(skip_serializing_if = "Option::is_none")]
     pub slug: Option<String>,
 
@@ -144,7 +140,6 @@ pub struct Mod {
     #[serde(default)]
     pub override_filters: bool,
 
-    // Kept for backwards compatibility reasons
     #[serde(skip_serializing)]
     check_game_version: Option<bool>,
     #[serde(skip_serializing)]
@@ -174,13 +169,74 @@ const fn is_false(b: &bool) -> bool {
     !*b
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StringOrInt {
+    String(String),
+    Int(i32),
+}
+
+impl<'de> serde::Deserialize<'de> for StringOrInt {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct StringOrIntVisitor;
+        impl<'de> serde::de::Visitor<'de> for StringOrIntVisitor {
+            type Value = StringOrInt;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("string or integer")
+            }
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E> {
+                Ok(StringOrInt::String(value.to_string()))
+            }
+            fn visit_string<E>(self, value: String) -> Result<Self::Value, E> {
+                Ok(StringOrInt::String(value))
+            }
+            fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(StringOrInt::Int(value as i32))
+            }
+            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(StringOrInt::Int(value as i32))
+            }
+        }
+        deserializer.deserialize_any(StringOrIntVisitor)
+    }
+}
+
+impl serde::Serialize for StringOrInt {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Self::String(s) => serializer.serialize_str(s),
+            Self::Int(i) => serializer.serialize_i32(*i),
+        }
+    }
+}
+
+impl From<StringOrInt> for String {
+    fn from(from: StringOrInt) -> Self {
+        match from {
+            StringOrInt::String(s) => s,
+            StringOrInt::Int(i) => i.to_string(),
+        }
+    }
+}
+
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 pub enum ConfigModIdentifier {
     CurseForgeProject(i32),
     ModrinthProject(String),
     GitHubRepository(String, String),
 
-    PinnedCurseForgeProject(i32, i32),
+    PinnedCurseForgeProject(i32, StringOrInt),
     PinnedModrinthProject(String, String),
     PinnedGitHubRepository((String, String), String),
 }
@@ -188,7 +244,7 @@ pub enum ConfigModIdentifier {
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 #[serde(from = "ConfigModIdentifier", into = "ConfigModIdentifier")]
 pub enum ModIdentifier {
-    CurseForgeProject(i32, Option<i32>),
+    CurseForgeProject(i32, Option<String>),
     ModrinthProject(String, Option<String>),
     GitHubRepository((String, String), Option<String>),
 }
@@ -202,7 +258,7 @@ impl From<ConfigModIdentifier> for ModIdentifier {
                 ModIdentifier::GitHubRepository((o, r), None)
             }
             ConfigModIdentifier::PinnedCurseForgeProject(p, v) => {
-                ModIdentifier::CurseForgeProject(p, Some(v))
+                ModIdentifier::CurseForgeProject(p, Some(v.into()))
             }
             ConfigModIdentifier::PinnedModrinthProject(p, v) => {
                 ModIdentifier::ModrinthProject(p, Some(v))
@@ -223,7 +279,7 @@ impl From<ModIdentifier> for ConfigModIdentifier {
                 ConfigModIdentifier::GitHubRepository(o, r)
             }
             ModIdentifier::CurseForgeProject(p, Some(v)) => {
-                ConfigModIdentifier::PinnedCurseForgeProject(p, v)
+                ConfigModIdentifier::PinnedCurseForgeProject(p, StringOrInt::String(v))
             }
             ModIdentifier::ModrinthProject(p, Some(v)) => {
                 ConfigModIdentifier::PinnedModrinthProject(p, v)
@@ -264,7 +320,6 @@ pub struct ModLoaderParseError;
 impl FromStr for ModLoader {
     type Err = ModLoaderParseError;
 
-    // This implementation is case-insensitive
     fn from_str(from: &str) -> Result<Self, Self::Err> {
         match from.trim().to_lowercase().as_str() {
             "quilt" => Ok(Self::Quilt),

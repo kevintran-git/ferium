@@ -32,24 +32,50 @@ impl Mod {
     pub async fn fetch_download_file(&self, profile_filters: Vec<Filter>) -> Result<DownloadData> {
         match &self.identifier {
             ModIdentifier::CurseForgeProject(mod_id, Some(pin)) => {
-                Ok(try_from_cf_file(CURSEFORGE_API.get_mod_file(*mod_id, *pin).await?)?.1)
+                if let Ok(file_id) = pin.parse::<i32>() {
+                    Ok(try_from_cf_file(CURSEFORGE_API.get_mod_file(*mod_id, file_id).await?)?.1)
+                } else {
+                    let files = CURSEFORGE_API.get_mod_files(*mod_id).await?;
+                    let matched_file = files
+                        .into_iter()
+                        .find(|file| {
+                            file.display_name.contains(pin) || file.file_name.contains(pin)
+                        })
+                        .ok_or(Error::InvalidPinID)?;
+                    Ok(try_from_cf_file(matched_file)?.1)
+                }
             }
             ModIdentifier::ModrinthProject(_, Some(pin)) => {
                 Ok(from_mr_version(MODRINTH_API.version_get(pin).await?).1)
             }
-            ModIdentifier::GitHubRepository((owner, repo), Some(pin)) => Ok(from_gh_asset(
-                GITHUB_API
+            ModIdentifier::GitHubRepository((owner, repo), Some(pin)) => {
+                let releases = GITHUB_API
                     .repos(owner, repo)
                     .releases()
                     .list()
                     .send()
                     .await?
-                    .items
-                    .into_iter()
-                    .flat_map(|release| release.assets)
-                    .find(|asset| &asset.node_id == pin)
-                    .ok_or(Error::InvalidPinID)?,
-            )),
+                    .items;
+                let matched_release = releases.iter().find(|release| {
+                    release.tag_name == *pin || release.name.as_ref() == Some(pin)
+                });
+                if let Some(release) = matched_release {
+                    let download_files = from_gh_releases(vec![release.clone()]);
+                    let index = super::check::select_latest(
+                        download_files.iter().map(|(m, _)| m),
+                        profile_filters,
+                    )
+                    .await?;
+                    Ok(download_files.into_iter().nth(index).unwrap().1)
+                } else {
+                    let asset = releases
+                        .into_iter()
+                        .flat_map(|release| release.assets)
+                        .find(|asset| &asset.node_id == pin)
+                        .ok_or(Error::InvalidPinID)?;
+                    Ok(from_gh_asset(asset))
+                }
+            }
             id => {
                 let download_files = match &id {
                     ModIdentifier::CurseForgeProject(id, None) => {

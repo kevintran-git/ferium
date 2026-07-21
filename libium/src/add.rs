@@ -74,6 +74,7 @@ struct ReleaseConnection {
 #[serde(rename_all = "camelCase")]
 struct Release {
     name: String,
+    tag_name: String,
     description: String,
     is_prerelease: bool,
     release_assets: ReleaseAssetConnection,
@@ -99,22 +100,14 @@ pub fn parse_id(id: String) -> Result<ModIdentifier> {
     if let Ok(id) = id.parse() {
         Ok(ModIdentifier::CurseForgeProject(
             id,
-            if let Some(pin) = pin {
-                Some(pin.parse().map_err(|_| Error::InvalidIdentifier)?)
-            } else {
-                None
-            },
+            pin.map(ToString::to_string),
         ))
     } else {
         let split = id.split('/').collect_vec();
         if let [owner, repo] = split.as_slice() {
             Ok(ModIdentifier::GitHubRepository(
                 (owner.to_string(), repo.to_string()),
-                if let Some(pin) = pin {
-                    Some(pin.parse().map_err(|_| Error::InvalidIdentifier)?)
-                } else {
-                    None
-                },
+                pin.map(ToString::to_string),
             ))
         } else {
             Ok(ModIdentifier::ModrinthProject(
@@ -174,7 +167,12 @@ pub async fn add(
 
     let cf_files = if cf_file_ids.iter().any(Option::is_some) {
         CURSEFORGE_API
-            .get_files(cf_file_ids.iter().copied().flatten().collect_vec())
+            .get_files(
+                cf_file_ids
+                    .iter()
+                    .filter_map(|opt| opt.as_ref().and_then(|pin| pin.parse::<i32>().ok()))
+                    .collect_vec(),
+            )
             .await?
     } else {
         Vec::new()
@@ -189,7 +187,6 @@ pub async fn add(
     };
 
     let gh_repos = if !gh_repo_ids.is_empty() {
-        // Construct GraphQl query using raw strings
         let mut graphql_query = "{".to_string();
         for (i, (owner, name)) in gh_repo_ids.iter().enumerate() {
             graphql_query.push_str(&format!(
@@ -201,6 +198,7 @@ pub async fn add(
                     releases(first: 100) {{
                         nodes {{
                             name
+                            tagName
                             description
                             isPrerelease
                             releaseAssets(first: 10) {{
@@ -216,7 +214,6 @@ pub async fn add(
         }
         graphql_query.push('}');
 
-        // Send the query
         let response: GraphQlResponse = GITHUB_API
             .graphql(&serde_json::json!({
                 "query": graphql_query
@@ -258,7 +255,7 @@ pub async fn add(
         }
 
         let res = 'cf_check: {
-            let identifier = ModIdentifier::CurseForgeProject(project.id, pin);
+            let identifier = ModIdentifier::CurseForgeProject(project.id, pin.clone());
 
             if profile.mods.iter().any(|mod_| {
                 mod_.name.eq_ignore_ascii_case(&project.name)
@@ -267,29 +264,33 @@ pub async fn add(
                 break 'cf_check Err(Error::AlreadyAdded);
             }
 
-            // Check if it can be downloaded by third-parties
             if Some(false) == project.allow_mod_distribution {
                 break 'cf_check Err(Error::DistributionDenied);
             }
 
-            // Check if the project is a Minecraft mod
             if !project.links.website_url.as_str().contains("mc-mods") {
                 break 'cf_check Err(Error::NotAMod);
             }
 
-            // Check if the mod is compatible
             if let Some(pin) = pin {
-                if let Some(file) = cf_files.iter().flatten().find(|file| file.id == pin) {
-                    if file.mod_id != project.id {
+                if let Ok(file_id) = pin.parse::<i32>() {
+                    if let Some(file) = cf_files.iter().flatten().find(|file| file.id == file_id) {
+                        if file.mod_id != project.id {
+                            break 'cf_check Err(Error::IncorrectVersionPin);
+                        }
+                    } else {
                         break 'cf_check Err(Error::IncorrectVersionPin);
                     }
                 } else {
-                    break 'cf_check Err(Error::IncorrectVersionPin);
+                    let files = CURSEFORGE_API.get_mod_files(project.id).await?;
+                    let any_match = files.into_iter().any(|file| {
+                        file.display_name.contains(&pin) || file.file_name.contains(&pin)
+                    });
+                    if !any_match {
+                        break 'cf_check Err(Error::IncorrectVersionPin);
+                    }
                 }
             } else if perform_checks {
-                // A very rough check that uses the latest file indexes (which to my knowledge
-                // always contain all possible mod loader and game version combinations)
-                // to only check that the
                 check::select_latest(
                     [Metadata {
                         filename: String::new(),
@@ -453,15 +454,16 @@ pub async fn add(
                     break 'gh_check Err(Error::AlreadyAdded);
                 }
                 if let Some(pin) = &pin {
-                    if !releases
-                        .into_iter()
-                        .flat_map(|release| release.release_assets.nodes)
-                        .any(|asset| &asset.id == pin)
-                    {
+                    let any_match = releases.iter().any(|release| {
+                        &release.tag_name == pin || &release.name == pin
+                    }) || releases
+                        .iter()
+                        .flat_map(|release| &release.release_assets.nodes)
+                        .any(|asset| &asset.id == pin);
+                    if !any_match {
                         break 'gh_check Err(Error::IncorrectVersionPin);
                     }
                 } else if perform_checks {
-                    // Check if the repo is compatible
                     check::select_latest(
                         releases
                             .into_iter()
