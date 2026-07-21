@@ -735,6 +735,7 @@ dependencies = [
  "rand 0.10.1",
  "reqwest 0.12.28",
  "rfd",
+ "rustls",
  "serde_json",
  "size",
  "tokio",

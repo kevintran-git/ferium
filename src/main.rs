@@ -74,7 +74,6 @@ pub static STYLE_BYTE: LazyLock<ProgressStyle> = LazyLock::new(|| {
 
 fn main() -> ExitCode {
     #[cfg(windows)]
-    // Enable colours on conhost (command prompt or powershell)
     {
         #[expect(clippy::unwrap_used, reason = "There is actually no error")]
         colored::control::set_virtual_terminal(true).unwrap();
@@ -88,7 +87,7 @@ fn main() -> ExitCode {
     if let Some(threads) = cli.threads {
         builder.worker_threads(threads);
     }
-    #[expect(clippy::expect_used)] // No error handling yet
+    #[expect(clippy::expect_used)]
     let runtime = builder.build().expect("Could not initialise Tokio runtime");
 
     if let Err(err) = runtime.block_on(actual_main(cli)) {
@@ -118,8 +117,8 @@ fn main() -> ExitCode {
 }
 
 async fn actual_main(mut cli_app: Ferium) -> Result<()> {
-    // The complete command should not require a config.
-    // See [#139](https://github.com/gorilla-devs/ferium/issues/139) for why this might be a problem.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     if let SubCommands::Complete { shell } = cli_app.subcommand {
         clap_complete::generate(
             shell,
@@ -129,13 +128,11 @@ async fn actual_main(mut cli_app: Ferium) -> Result<()> {
         );
         return Ok(());
     }
-    // Alias `ferium profiles` to `ferium profile list`
     if let SubCommands::Profiles = cli_app.subcommand {
         cli_app.subcommand = SubCommands::Profile {
             subcommand: Some(ProfileSubCommands::List),
         };
     }
-    // Alias `ferium modpacks` to `ferium modpack list`
     if let SubCommands::Modpacks = cli_app.subcommand {
         cli_app.subcommand = SubCommands::Modpack {
             subcommand: Some(ModpackSubCommands::List),
@@ -174,7 +171,6 @@ async fn actual_main(mut cli_app: Ferium) -> Result<()> {
             }
         });
 
-    // Handle old configs which may be in a different path
     if !config_path.exists() && old_default_config_path.exists() {
         std::fs::rename(old_default_config_path, config_path)
             .context("Failed to relocate config file to the new path, try doing so manually.")?;
@@ -184,7 +180,6 @@ async fn actual_main(mut cli_app: Ferium) -> Result<()> {
 
     let mut did_add_fail = false;
 
-    // Run function(s) based on the sub(sub)command to be executed
     match cli_app.subcommand {
         SubCommands::Complete { .. } | SubCommands::Profiles | SubCommands::Modpacks => {
             unreachable!();
@@ -245,9 +240,7 @@ async fn actual_main(mut cli_app: Ferium) -> Result<()> {
             let override_profile = filters.override_profile;
             let filters: Vec<_> = filters.into();
 
-            // TODO: conf multiple filters if the user sets the option
             ensure!(
-                // If filters are specified, there should only be one mod
                 filters.is_empty() || identifiers.len() == 1,
                 "You can only configure filters when adding a single mod!"
             );
@@ -479,7 +472,6 @@ async fn actual_main(mut cli_app: Ferium) -> Result<()> {
             .mods
             .sort_unstable_by_key(|mod_| mod_.name.to_lowercase());
     });
-    // Update config file with possibly edited config
     config::write_config(config_path, &config)?;
 
     if did_add_fail {

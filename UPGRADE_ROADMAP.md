@@ -57,7 +57,38 @@ Full writeup of the comparison lives in Claude's memory
 - [x] Manifest-ID-based duplicate JAR cleanup (bug #4), ported from modmgr's
       approach but covering Fabric/Forge/NeoForge/Quilt
       (`libium/src/manifest.rs`, wired into `src/download.rs::download`).
-- [ ] HTTP connect/read timeouts on the shared client (bug #8).
+- [x] Fix for the `upgrade` resolution stage hanging forever on a single
+      unresponsive Modrinth/CurseForge/GitHub request (bug #8). Root cause:
+      `ferinth`/`furse`/`octocrab` build their own internal `reqwest::Client`
+      with no timeout and no way to inject one, and the resolution loop in
+      `get_platform_downloadables` (`src/subcommands/upgrade.rs`) waits for
+      *every* mod's check to finish before downloading anything — so one dead
+      connection blocks every already-resolved mod from downloading too.
+      Rejected an automatic timeout (would either fail fast on legitimately
+      slow-but-alive connections, or need an arbitrary guessed duration).
+      Instead: pressing enter while checks are in progress aborts whatever
+      hasn't resolved yet and proceeds to download everything that has,
+      exactly like an already-failed mod is handled. Only wired up when
+      stdin is a terminal, so scripted/non-interactive runs are unaffected.
+- [x] Fixed pre-existing test suite compile error: `src/tests.rs` used the
+      unstable `std::assert_matches` (nightly-only), converted all call sites
+      to stable `assert!(matches!(...))`.
+- [x] Fixed pre-existing rustls panic: both `ring` and `aws-lc-rs` crypto
+      provider features end up active in the dependency graph (two `reqwest`
+      versions resolve, one pulling in each backend), so rustls can't
+      auto-select a default provider and panics on the first TLS connection.
+      This isn't test-only — it would hit the real binary too, just
+      depending on which network call happens to run first. Fixed by adding
+      `rustls` as an explicit dependency and calling
+      `rustls::crypto::ring::default_provider().install_default()` once at
+      the top of `actual_main`, so both the real CLI and every test go
+      through it.
+- Confirmed via test suite run: after the above two fixes, the remaining
+  test failures (`add_github`, `add_all`, `add_all_pinned`, `already_added`,
+  `list_markdown`, `list_verbose`, `remove_slug`, `upgrade`) are all GitHub
+  API rate limiting (403, unauthenticated 60 req/hour) in this dev
+  environment with no `GITHUB_TOKEN` set — not a code bug. Feeds directly
+  into the Phase 2 GitHub token item below.
 
 ### Phase 2 — Network resilience
 - [ ] Verify/fix GitHub token handling for rate limits (bug #6).
@@ -99,3 +130,6 @@ Full writeup of the comparison lives in Claude's memory
 - 2026-07-21: Roadmap created. Phase 0 not yet started.
 - 2026-07-21: Phase 0 done — `Config.version`, `Config::migrate`, wired into
   `read_config`.
+- 2026-07-21: Phase 1 done — manifest-ID dedup, resolution-stage skip signal,
+  plus two pre-existing bugs fixed along the way (`assert_matches` nightly
+  feature, rustls dual-crypto-provider panic).

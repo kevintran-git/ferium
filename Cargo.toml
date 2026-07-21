@@ -74,6 +74,7 @@ inquire = "0.9"
 libium = { path = "./libium" }
 anyhow = "1.0"
 size = "0.5"
+rustls = { version = "0.23", features = ["ring"] }
 
 [dev-dependencies]
 rand = "0.10"
