@@ -3,8 +3,13 @@ use derive_more::derive::Display;
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, str::FromStr};
 
+pub const CURRENT_CONFIG_VERSION: u32 = 1;
+
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 pub struct Config {
+    #[serde(default)]
+    pub version: u32,
+
     #[serde(skip_serializing_if = "is_zero")]
     #[serde(default)]
     pub active_profile: usize,
@@ -24,6 +29,17 @@ pub struct Config {
 
 const fn is_zero(n: &usize) -> bool {
     *n == 0
+}
+
+impl Config {
+    pub(crate) fn migrate(&mut self) {
+        if self.version < 1 {
+            self.profiles
+                .iter_mut()
+                .for_each(Profile::backwards_compat);
+        }
+        self.version = CURRENT_CONFIG_VERSION;
+    }
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

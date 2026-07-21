@@ -45,10 +45,10 @@ Full writeup of the comparison lives in Claude's memory
 ## Phases
 
 ### Phase 0 — Config schema versioning (foundation)
-- [ ] Add explicit schema version to `Config` (model on the existing
-      `Profile::backwards_compat` pattern in `libium/src/config/structs.rs`
-      and `mod.rs`).
-- [ ] Migration runs automatically on `read_config`, old configs upgrade
+- [x] Add explicit schema version to `Config` (`version: u32`, defaults to
+      `0` for pre-existing configs, migrated via `Config::migrate` in
+      `libium/src/config/structs.rs`, called from `read_config` in `mod.rs`).
+- [x] Migration runs automatically on `read_config`, old configs upgrade
       in-memory before use, and are rewritten in the new format on next save.
 - [x] String-based version pins for CurseForge/GitHub (tag name, display
       name, or file name, not just numeric IDs) — commit `61cbd99`.
@@ -96,3 +96,5 @@ Full writeup of the comparison lives in Claude's memory
 ## Status log
 
 - 2026-07-21: Roadmap created. Phase 0 not yet started.
+- 2026-07-21: Phase 0 done — `Config.version`, `Config::migrate`, wired into
+  `read_config`.
