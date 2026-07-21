@@ -22,6 +22,7 @@ pub enum Error {
     IOError(#[from] std::io::Error),
     #[error("The modpack has no files available")]
     NoFilesAvailable,
+    NoDownloadFile(#[from] super::NoFilesAvailableError),
 }
 type Result<T> = std::result::Result<T, Error>;
 
@@ -47,7 +48,7 @@ impl ModpackIdentifier {
                     .into_iter()
                     .nth(0)
                     .ok_or(Error::NoFilesAvailable)?,
-            ),
+            )?,
         };
 
         let cache_dir = PROJECT_DIRS.cache_dir().join("downloaded");

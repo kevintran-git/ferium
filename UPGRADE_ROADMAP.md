@@ -91,10 +91,26 @@ Full writeup of the comparison lives in Claude's memory
   into the Phase 2 GitHub token item below.
 
 ### Phase 2 — Network resilience
-- [ ] Verify/fix GitHub token handling for rate limits (bug #6).
-- [ ] Verify/fix CurseForge API key handling (bug #5).
-- [ ] Harden Modrinth response parsing so schema drift doesn't hard-abort
-      (bug #7).
+- [x] Fixed a crash in `ferium add <github-repo>`: the GraphQL error handler
+      indexed `err.path[0]` unconditionally, but GitHub omits `path` on
+      query-level errors (rate limiting, abuse detection) — panicked instead
+      of surfacing the actual error message (bug #6).
+- [x] `upgrade`'s per-mod resolution loop now recognizes GitHub rate limits
+      and invalid/unauthorized CurseForge API keys the same way it already
+      did for Modrinth's rate limit: bail immediately instead of repeating
+      the identical failure once per remaining mod on that platform
+      (bugs #5/#6).
+- [x] Added hints to the top-level error output pointing at
+      `--github-token`/`--curseforge-api-key` when the error looks like a
+      rate limit or a rejected CurseForge key.
+- [x] Harden Modrinth response parsing: a version with an empty `files`
+      list (schema drift, or a version whose files were pulled after a
+      malware scan) crashed via an unchecked `self.files[0]` in
+      `VersionExt::get_version_file`. Same class of crash already partially
+      fixed for modpacks with zero versions in #508 — this fixes it one
+      layer down, for a single version with zero files. `from_mr_version`
+      is now fallible; when checking all versions of a project the bad one
+      is skipped instead of aborting the whole check (bug #7).
 
 ### Phase 3 — Shaderpacks & resourcepacks (new feature, from modmgr)
 - [ ] Extend `Profile` with tracked shaderpacks/resourcepacks (reusing
@@ -133,3 +149,6 @@ Full writeup of the comparison lives in Claude's memory
 - 2026-07-21: Phase 1 done — manifest-ID dedup, resolution-stage skip signal,
   plus two pre-existing bugs fixed along the way (`assert_matches` nightly
   feature, rustls dual-crypto-provider panic).
+- 2026-07-21: Phase 2 done — GitHub GraphQL error-path crash fix, early bail
+  on GitHub rate limit / bad CurseForge key during `upgrade`, top-level error
+  hints, and a Modrinth version-with-no-files crash fix.

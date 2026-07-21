@@ -25,6 +25,7 @@ pub enum Error {
     CurseForgeError(#[from] furse::Error),
     #[error("GitHub: {0:#?}")]
     GitHubError(#[from] octocrab::Error),
+    NoFilesAvailable(#[from] super::NoFilesAvailableError),
 }
 type Result<T> = std::result::Result<T, Error>;
 
@@ -46,7 +47,7 @@ impl Mod {
                 }
             }
             ModIdentifier::ModrinthProject(_, Some(pin)) => {
-                Ok(from_mr_version(MODRINTH_API.version_get(pin).await?).1)
+                Ok(from_mr_version(MODRINTH_API.version_get(pin).await?)?.1)
             }
             ModIdentifier::GitHubRepository((owner, repo), Some(pin)) => {
                 let releases = GITHUB_API
@@ -90,7 +91,7 @@ impl Mod {
                         .version_list(id)
                         .await?
                         .into_iter()
-                        .map(from_mr_version)
+                        .filter_map(|v| from_mr_version(v).ok())
                         .collect_vec(),
                     ModIdentifier::GitHubRepository((owner, repo), None) => GITHUB_API
                         .repos(owner, repo)

@@ -68,13 +68,17 @@ pub struct DownloadData {
 /// Contains the mod ID and file ID
 pub struct DistributionDeniedError(pub i32, pub i32);
 
+#[derive(Debug, thiserror::Error)]
+#[error("This version has no files available")]
+pub struct NoFilesAvailableError;
+
 pub fn try_from_cf_file(
     file: CFFile,
 ) -> std::result::Result<(Metadata, DownloadData), DistributionDeniedError> {
     Ok((
         Metadata {
             title: file.display_name,
-            description: String::new(), // Changelog requires a separate request
+            description: String::new(),
             filename: file.file_name.clone(),
             channel: match file.release_type {
                 FileReleaseType::Release => ReleaseChannel::Release,
@@ -120,12 +124,15 @@ pub fn try_from_cf_file(
     ))
 }
 
-pub fn from_mr_version(version: MRVersion) -> (Metadata, DownloadData) {
-    (
+pub fn from_mr_version(
+    version: MRVersion,
+) -> std::result::Result<(Metadata, DownloadData), NoFilesAvailableError> {
+    let file = version.get_version_file().ok_or(NoFilesAvailableError)?;
+    Ok((
         Metadata {
             title: version.name.clone(),
             description: version.changelog.as_ref().cloned().unwrap_or_default(),
-            filename: version.get_version_file().filename.clone(),
+            filename: file.filename.clone(),
             channel: match version.version_type {
                 VersionType::Release => ReleaseChannel::Release,
                 VersionType::Beta => ReleaseChannel::Beta,
@@ -140,9 +147,9 @@ pub fn from_mr_version(version: MRVersion) -> (Metadata, DownloadData) {
             game_versions: version.game_versions.clone(),
         },
         DownloadData {
-            download_url: version.get_version_file().url.clone(),
-            output: version.get_version_file().filename.as_str().into(),
-            length: version.get_version_file().size,
+            download_url: file.url.clone(),
+            output: file.filename.as_str().into(),
+            length: file.size,
             dependencies: version
                 .dependencies
                 .clone()
@@ -189,7 +196,7 @@ pub fn from_mr_version(version: MRVersion) -> (Metadata, DownloadData) {
                 })
                 .collect_vec(),
         },
-    )
+    ))
 }
 
 pub fn from_modpack_file(file: ModpackModFile) -> DownloadData {

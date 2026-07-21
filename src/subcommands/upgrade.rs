@@ -26,6 +26,21 @@ use std::{
 };
 use tokio::task::JoinSet;
 
+/// Whether `err` means every other mod on the same platform will fail identically,
+/// so continuing to check them one by one would just repeat the same failure
+fn is_rate_limited_or_unauthorised(err: &mod_downloadable::Error) -> bool {
+    match err {
+        mod_downloadable::Error::ModrinthError(ferinth::Error::RateLimitExceeded(_)) => true,
+        mod_downloadable::Error::GitHubError(octocrab::Error::GitHub { source, .. }) => {
+            source.status_code == 403 && source.message.to_lowercase().contains("rate limit")
+        }
+        mod_downloadable::Error::CurseForgeError(furse::Error::ReqwestError(source)) => {
+            source.status() == Some(reqwest::StatusCode::FORBIDDEN)
+        }
+        _ => false,
+    }
+}
+
 /// Get the latest compatible downloadable for the mods in `profile`
 ///
 /// If an error occurs with a resolving task, instead of failing immediately,
@@ -133,10 +148,7 @@ pub async fn get_platform_downloadables(profile: &Profile) -> Result<(Vec<Downlo
                         Ok(Some(download_file))
                     }
                     Err(err) => {
-                        if let mod_downloadable::Error::ModrinthError(
-                            ferinth::Error::RateLimitExceeded(_),
-                        ) = err
-                        {
+                        if is_rate_limited_or_unauthorised(&err) {
                             progress_bar.lock().finish_and_clear();
                             bail!(err);
                         }

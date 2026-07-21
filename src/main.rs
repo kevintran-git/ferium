@@ -93,18 +93,26 @@ fn main() -> ExitCode {
     if let Err(err) = runtime.block_on(actual_main(cli)) {
         if !err.to_string().is_empty() {
             eprintln!("{}", err.to_string().red().bold());
-            if err
-                .to_string()
-                .to_lowercase()
-                .contains("error trying to connect")
-                || err
-                    .to_string()
-                    .to_lowercase()
-                    .contains("error sending request")
+            let lower = err.to_string().to_lowercase();
+            if lower.contains("error trying to connect") || lower.contains("error sending request")
             {
                 eprintln!(
                     "{}",
                     "Verify that you are connected to the internet"
+                        .yellow()
+                        .bold()
+                );
+            } else if lower.contains("rate limit") {
+                eprintln!(
+                    "{}",
+                    "Set a GitHub personal access token with `--github-token` (or the `GITHUB_TOKEN` env var) to raise your rate limit"
+                        .yellow()
+                        .bold()
+                );
+            } else if lower.contains("curseforge") && lower.contains("403") {
+                eprintln!(
+                    "{}",
+                    "Set your own CurseForge API key with `--curseforge-api-key` (or the `CURSEFORGE_API_KEY` env var)"
                         .yellow()
                         .bold()
                 );

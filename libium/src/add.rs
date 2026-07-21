@@ -50,8 +50,9 @@ struct GraphQlResponse {
 
 #[derive(Deserialize, Debug)]
 struct GraphQLError {
-    #[serde(rename = "type")]
-    type_: String,
+    #[serde(rename = "type", default)]
+    type_: Option<String>,
+    #[serde(default)]
     path: Vec<String>,
     message: String,
 }
@@ -221,15 +222,18 @@ pub async fn add(
             .await?;
 
         errors.extend(response.errors.into_iter().map(|err| {
+            let target = err
+                .path
+                .first()
+                .and_then(|p| p.strip_prefix('_'))
+                .and_then(|s| s.parse::<usize>().ok())
+                .and_then(|i| gh_repo_ids.get(i))
+                .map(|(owner, repo)| format!("{owner}/{repo}"))
+                .unwrap_or_else(|| "GitHub".to_owned());
+
             (
-                {
-                    let (owner, repo) = &gh_repo_ids[err.path[0]
-                        .strip_prefix('_')
-                        .and_then(|s| s.parse::<usize>().ok())
-                        .expect("Unexpected response data")];
-                    format!("{owner}/{repo}")
-                },
-                if err.type_ == "NOT_FOUND" {
+                target,
+                if err.type_.as_deref() == Some("NOT_FOUND") {
                     Error::DoesNotExist
                 } else {
                     Error::GitHubError(err.message)
