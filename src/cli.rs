@@ -303,6 +303,8 @@ pub struct FilterArguments {
     pub game_version_strict: Vec<String>,
     #[clap(long, group = "version")]
     pub game_version_minor: Vec<String>,
+    #[clap(long, group = "version")]
+    pub game_version_range: Option<String>,
 
     #[clap(long, short = 'c')]
     pub release_channel: Option<filters::ReleaseChannel>,
@@ -315,8 +317,10 @@ pub struct FilterArguments {
     pub description: Option<String>,
 }
 
-impl From<FilterArguments> for Vec<Filter> {
-    fn from(value: FilterArguments) -> Self {
+impl TryFrom<FilterArguments> for Vec<Filter> {
+    type Error = anyhow::Error;
+
+    fn try_from(value: FilterArguments) -> anyhow::Result<Self> {
         let mut filters = vec![];
 
         if !value.mod_loader_prefer.is_empty() {
@@ -331,6 +335,18 @@ impl From<FilterArguments> for Vec<Filter> {
         if !value.game_version_minor.is_empty() {
             filters.push(Filter::GameVersionMinor(value.game_version_minor));
         }
+        if let Some(range) = value.game_version_range {
+            let Some((from, to)) = range.split_once("..") else {
+                anyhow::bail!("game version ranges must be given as `FROM..TO`, `FROM..`, or `..TO`");
+            };
+            let from = (!from.is_empty()).then(|| from.to_string());
+            let to = (!to.is_empty()).then(|| to.to_string());
+            anyhow::ensure!(
+                from.is_some() || to.is_some(),
+                "game version ranges must have at least one bound"
+            );
+            filters.push(Filter::GameVersionRange { from, to });
+        }
         if let Some(release_channel) = value.release_channel {
             filters.push(Filter::ReleaseChannel(release_channel));
         }
@@ -344,7 +360,7 @@ impl From<FilterArguments> for Vec<Filter> {
             filters.push(Filter::Description(regex));
         }
 
-        filters
+        Ok(filters)
     }
 }
 

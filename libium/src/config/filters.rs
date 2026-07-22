@@ -24,6 +24,14 @@ pub enum Filter {
     #[display("Game Version Minor ({})", _0.iter().display(", "))]
     GameVersionMinor(Vec<String>),
 
+    /// Selects files compatible with any release version between `from` and `to` (inclusive),
+    /// using Modrinth's game version tag list to determine the versions in between
+    #[display("Game Version Range ({}..{})", from.as_deref().unwrap_or_default(), to.as_deref().unwrap_or_default())]
+    GameVersionRange {
+        from: Option<String>,
+        to: Option<String>,
+    },
+
     /// Selects files matching the channel provided or more stable channels
     #[display("Release Channel ({_0})")]
     ReleaseChannel(ReleaseChannel),
@@ -86,11 +94,6 @@ impl ProfileParameters for Vec<Filter> {
     }
 }
 
-// impl PartialEq for Filter {
-//     fn eq(&self, other: &Self) -> bool {
-//         discriminant(self) == discriminant(other)
-//     }
-// }
 
 #[derive(Deserialize, Serialize, Debug, Display, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum ReleaseChannel {

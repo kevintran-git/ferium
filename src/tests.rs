@@ -10,7 +10,7 @@ use crate::{
 use libium::config::structs::ModLoader;
 use std::{
     env::current_dir,
-    fs::{copy, create_dir_all},
+    fs::{copy, create_dir_all, read_to_string},
     path::PathBuf,
 };
 
@@ -235,6 +235,61 @@ async fn add_shaderpack_wrong_kind() {
                     force: true,
                     filters: FilterArguments::default(),
                 }),
+            },
+            Some("empty_profile"),
+        ))
+        .await,
+        Err(_),
+    ));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn add_resolves_dependencies() {
+    let args = get_args(
+        SubCommands::Add {
+            identifiers: vec!["iris".to_owned()],
+            force: true,
+            filters: FilterArguments::default(),
+        },
+        Some("empty_profile"),
+    );
+    let config_file = args.config_file.clone().unwrap();
+    assert!(matches!(actual_main(args).await, Ok(())));
+
+    let config = read_to_string(config_file).unwrap();
+    assert!(config.contains("AANobbMI"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn add_game_version_range() {
+    assert!(matches!(
+        actual_main(get_args(
+            SubCommands::Add {
+                identifiers: vec!["carpet".to_owned()],
+                force: false,
+                filters: FilterArguments {
+                    game_version_range: Some("1.18..1.19".to_owned()),
+                    ..FilterArguments::default()
+                },
+            },
+            Some("empty_profile"),
+        ))
+        .await,
+        Ok(()),
+    ));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn add_game_version_range_unknown_bound() {
+    assert!(matches!(
+        actual_main(get_args(
+            SubCommands::Add {
+                identifiers: vec!["carpet".to_owned()],
+                force: false,
+                filters: FilterArguments {
+                    game_version_range: Some("9.99..9.999".to_owned()),
+                    ..FilterArguments::default()
+                },
             },
             Some("empty_profile"),
         ))

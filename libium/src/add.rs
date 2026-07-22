@@ -1,7 +1,7 @@
 use crate::{
     config::{
         filters::{Filter, ReleaseChannel},
-        structs::{ModIdentifier, ModLoader, Profile, ProjectKind},
+        structs::{Mod, ModIdentifier, ModLoader, Profile, ProjectKind},
     },
     iter_ext::IterExt as _,
     upgrade::{check, Metadata},
@@ -120,12 +120,85 @@ pub fn parse_id(id: String) -> Result<ModIdentifier> {
 }
 
 /// Adds mods from `identifiers`, and returns successful mods with their names, and unsuccessful mods with an error.
+///
+/// Also recursively adds any required dependencies not already tracked in `profile`.
+pub async fn add(
+    profile: &mut Profile,
+    kind: ProjectKind,
+    identifiers: Vec<ModIdentifier>,
+    perform_checks: bool,
+    override_profile: bool,
+    filters: Vec<Filter>,
+) -> Result<(Vec<(String, ModIdentifier)>, Vec<(String, Error)>)> {
+    let (mut success_names, mut errors) =
+        add_batch(profile, kind, identifiers, perform_checks, override_profile, filters).await?;
+
+    let mut frontier = success_names
+        .iter()
+        .map(|(_, identifier)| identifier.clone())
+        .filter(|identifier| !matches!(identifier, ModIdentifier::GitHubRepository(..)))
+        .collect_vec();
+
+    while !frontier.is_empty() {
+        let mut required_deps = Vec::new();
+        for identifier in frontier {
+            let probe = Mod::new(String::new(), identifier, vec![], false);
+            if let Ok(download) = probe.fetch_download_file(profile.filters.clone()).await {
+                required_deps.extend(download.dependencies);
+            }
+        }
+
+        let mut deduped_deps: Vec<ModIdentifier> = Vec::new();
+        for dep in required_deps {
+            let already_tracked = profile
+                .mods(ProjectKind::Mod)
+                .iter()
+                .any(|mod_| mod_.identifier.is_same_as(&dep))
+                || success_names.iter().any(|(_, id)| id.is_same_as(&dep))
+                || deduped_deps.iter().any(|id| id.is_same_as(&dep));
+            if !already_tracked {
+                deduped_deps.push(dep);
+            }
+        }
+        let required_deps = deduped_deps;
+
+        if required_deps.is_empty() {
+            break;
+        }
+
+        let (dep_successes, dep_errors) = add_batch(
+            profile,
+            ProjectKind::Mod,
+            required_deps,
+            perform_checks,
+            false,
+            vec![],
+        )
+        .await?;
+
+        frontier = dep_successes
+            .iter()
+            .map(|(_, identifier)| identifier.clone())
+            .collect_vec();
+
+        success_names.extend(dep_successes);
+        errors.extend(
+            dep_errors
+                .into_iter()
+                .map(|(name, err)| (format!("Dependency: {name}"), err)),
+        );
+    }
+
+    Ok((success_names, errors))
+}
+
+/// Adds mods from `identifiers`, and returns successful mods with their names, and unsuccessful mods with an error.
 /// Currently does not batch requests when adding multiple pinned mods.
 ///
 /// Classifies the `identifiers` into the appropriate platforms, sends batch requests to get the necessary information,
 /// checks details about the projects, and adds them to `profile` if suitable.
 /// Performs checks on the mods to see whether they're compatible with the profile if `perform_checks` is true
-pub async fn add(
+async fn add_batch(
     profile: &mut Profile,
     kind: ProjectKind,
     identifiers: Vec<ModIdentifier>,
@@ -325,7 +398,12 @@ pub async fn add(
                     }
                     .iter()
                     .filter(|f| {
-                        matches!(f, Filter::GameVersionStrict(_) | Filter::GameVersionMinor(_))
+                        matches!(
+                            f,
+                            Filter::GameVersionStrict(_)
+                                | Filter::GameVersionMinor(_)
+                                | Filter::GameVersionRange { .. }
+                        )
                             || (kind.uses_mod_loader()
                                 && matches!(
                                     f,
@@ -408,7 +486,12 @@ pub async fn add(
                     }
                     .iter()
                     .filter(|f| {
-                        matches!(f, Filter::GameVersionStrict(_) | Filter::GameVersionMinor(_))
+                        matches!(
+                            f,
+                            Filter::GameVersionStrict(_)
+                                | Filter::GameVersionMinor(_)
+                                | Filter::GameVersionRange { .. }
+                        )
                             || (kind.uses_mod_loader()
                                 && matches!(
                                     f,

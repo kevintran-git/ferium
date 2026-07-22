@@ -17,6 +17,8 @@ pub enum Error {
     FilterEmpty(Vec<String>),
     #[error("Failed to find a compatible combination")]
     IntersectFailure,
+    #[error("{0} is not a known game version")]
+    UnknownGameVersion(String),
 }
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -83,6 +85,31 @@ impl Filter {
 
                 download_files
                     .positions(|f| final_versions.iter().any(|vc| f.game_versions.contains(vc)))
+                    .collect_hashset()
+            }
+
+            Filter::GameVersionRange { from, to } => {
+                let ordered = get_version_groups().await?.iter().flatten().collect_vec();
+
+                let from_idx = match from {
+                    Some(v) => ordered
+                        .iter()
+                        .position(|o| *o == v)
+                        .ok_or_else(|| Error::UnknownGameVersion(v.clone()))?,
+                    None => ordered.len().saturating_sub(1),
+                };
+                let to_idx = match to {
+                    Some(v) => ordered
+                        .iter()
+                        .position(|o| *o == v)
+                        .ok_or_else(|| Error::UnknownGameVersion(v.clone()))?,
+                    None => 0,
+                };
+                let (newest_idx, oldest_idx) = (to_idx.min(from_idx), to_idx.max(from_idx));
+                let final_versions = &ordered[newest_idx..=oldest_idx];
+
+                download_files
+                    .positions(|f| final_versions.iter().any(|vc| f.game_versions.contains(*vc)))
                     .collect_hashset()
             }
 

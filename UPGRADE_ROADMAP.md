@@ -156,11 +156,39 @@ Full writeup of the comparison lives in Claude's memory
       expected — and remove).
 
 ### Phase 4 — Big subsystems
-- [ ] Recursive dependency resolution using structured dependency metadata
-      (Modrinth's project-id-based deps, not manifest-ID slug guessing) —
-      bug #2.
-- [ ] Range-aware game version matching, extending the `Filter` system —
-      bug #3.
+- [x] `upgrade` already resolved dependencies recursively at download time
+      via structured, project-ID-based metadata (`DownloadData.dependencies`,
+      fed back into the same resolution queue) — that part of bug #2 turned
+      out to already be fixed upstream, unlike modmgr's fragile manifest-ID
+      slug guessing. The actual gap: `ferium add` never looked at
+      dependencies at all, so a required dependency (e.g. Fabric API) was
+      silently missing from the profile until the next `upgrade` pulled it
+      in ephemerally, without ever being tracked. `libium::add()` is now a
+      thin wrapper around the original per-batch logic (renamed
+      `add_batch`): after a CurseForge/Modrinth project is added, it fetches
+      that project's resolved download file, reads its required
+      dependencies, and feeds any not already tracked back into another
+      `add_batch` round (as `ProjectKind::Mod`, since that's what a
+      "required dependency" is in practice), looping until a round adds
+      nothing new. Optional dependencies are intentionally left alone (no
+      interactive prompting in the library layer). Verified live: adding
+      `sodium-extra` transitively pulled in both `Sodium` and `Fabric API`
+      with no duplicates, and `iris` correctly skipped `Sodium` when it was
+      already tracked. Covered by `tests::add_resolves_dependencies`.
+- [x] Added `Filter::GameVersionRange { from, to }` — bug #3. Either bound
+      can be omitted (open-ended). Matching resolves both bounds against
+      Modrinth's ordered game-version tag list (the same list
+      `GameVersionMinor` already uses) and accepts any release version
+      between them, inclusive, regardless of which bound is numerically
+      larger. Exposed as `--game-version-range FROM..TO` (also `FROM..` /
+      `..TO`) alongside the existing `--game-version-strict`/`-minor` flags
+      in `FilterArguments`; parsing the range string can fail (bad syntax,
+      no bounds, or an unrecognised version), so
+      `impl From<FilterArguments> for Vec<Filter>` became `TryFrom`. An
+      unknown bound surfaces as a normal incompatibility error ("9.99 is not
+      a known game version") rather than silently matching nothing. Covered
+      by `tests::add_game_version_range` and
+      `add_game_version_range_unknown_bound`.
 
 ### Phase 5 — Safety fixes modmgr got wrong
 - [ ] Fault-tolerant modpack import: skip-and-warn on a single bad file
@@ -193,3 +221,7 @@ Full writeup of the comparison lives in Claude's memory
   `ferium shaderpack`/`ferium resourcepack` subcommands, `ProjectKind`-based
   generalization of add/list/remove/upgrade, and a `check::select_latest`
   bug fix (see above) that the new mod-loader-less code path surfaced.
+- 2026-07-21: Phase 4 done — `ferium add` now recursively resolves and
+  tracks required dependencies (it never did before; `upgrade` already
+  handled this correctly), and a new `Filter::GameVersionRange` extends the
+  filter system with `--game-version-range FROM..TO` matching.
