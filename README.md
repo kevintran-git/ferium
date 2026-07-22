@@ -111,7 +111,8 @@ You can either have your own set of mods in what is called a 'profile', or insta
   - Then, [add your mods](#adding-mods) using `hopper add`.
   - Finally, download your mods using `hopper upgrade`.
 - [Add a modpack](#adding-modpacks) by running `hopper modpack add <project_id>`.
-  - After which, run `hopper modpack upgrade` to download and install the latest version of the modpack.
+  - After which, run `hopper upgrade` to download and install the latest version of the modpack — the
+    same command used for regular mods, since a modpack is just a named group of mods in your profile.
 
 ### Automatically Import Mods
 
@@ -178,6 +179,16 @@ hopper modpack add project_id
 `project_id` is the project ID of the modpack. (e.g. [Fabulously Optimized](https://www.curseforge.com/minecraft/modpacks/fabulously-optimized) has the project ID `396246`). You can find the project ID at the top of the right sidebar under 'About Project'.  
 So to add [Fabulously Optimized](https://www.curseforge.com/minecraft/modpacks/fabulously-optimized), you should run `hopper modpack add 396246`.
 
+#### A raw `.mrpack` or CurseForge zip
+
+```
+hopper modpack add <url-or-path>
+```
+
+For a modpack that isn't listed as a project on either platform — e.g. a `.mrpack` published as a plain file/URL — pass the URL or local path directly. Hopper downloads it, tells a Modrinth `.mrpack` apart from a CurseForge manifest zip automatically, and resolves each file back to a tracked mod.
+
+A tracked modpack is just a named group of mods living in your profile alongside anything you add yourself with `hopper add` — there's no separate output directory or lifecycle to manage. Use `hopper modpack list` to see tracked groups, and `hopper modpack remove <name>` to stop tracking one (mods are kept as freestanding by default; add `--delete-mods` to remove them too).
+
 ### Upgrading Mods
 
 > [!WARNING]
@@ -186,7 +197,7 @@ So to add [Fabulously Optimized](https://www.curseforge.com/minecraft/modpacks/f
 
 Now after adding all your mods, run `hopper upgrade` to download all of them to your output directory.
 This defaults to `.minecraft/mods`, where `.minecraft` is the default Minecraft resources directory. You don't need to worry about this if you play with Mojang's launcher and use the default resources directory.
-You can choose to pick a custom output directory during profile creation or [change it later](#configure-1).
+You can choose to pick a custom output directory during profile creation or [change it later](#configure).
 
 If hopper fails to download a mod, it will print its name in red and try to give a reason. It will continue downloading the rest of your mods and will exit with an error.
 
@@ -196,18 +207,10 @@ If hopper fails to download a mod, it will print its name in red and try to give
 
 ### Upgrading Modpacks
 
-> [!WARNING]
-> If your output directory's `mods` and/or `resourcepacks` folders are not empty when setting it, hopper will offer to create a backup.  
-> Please do so if it contains any files you would like to keep.
-
-Now after adding your modpack, run `hopper modpack upgrade` to download the modpack to your output directory.
-This defaults to `.minecraft`, which is the default Minecraft resources directory. You don't need to worry about this if you play with Mojang's launcher and use the default resources directory.
-You can choose to pick a custom output directory when adding the modpack or [change it later](#configure).
-
-If hopper fails to download a mod, it will print its name in red and try to give a reason. It will continue downloading the rest of the mods and will exit with an error.
+A tracked modpack has no separate upgrade command — `hopper upgrade` refreshes every modpack group in the active profile (adding new mods the pack picked up, removing ones it dropped, warning instead of clobbering anything you tracked yourself) before its normal download pass, all in one run.
 
 > [!CAUTION]
-> If you choose to install modpack overrides, your existing configs may be overwritten when upgrading.
+> If you chose to install modpack overrides when adding it, your existing configs may be overwritten on the next upgrade that changes the pack's version.
 
 ### Managing Mods
 
@@ -240,31 +243,21 @@ You can also manually disable the mod loader (and/or game version) check(s) in t
 }
 ```
 
+### Joining Someone Else's Modpack Server
+
+If you don't have a Minecraft launcher set up at all yet, `hopper join <project-id-or-url>` gets you to a joinable state in one command: it installs a matching Fabric loader into the vanilla launcher (registers it in `launcher_profiles.json`), creates a profile, tracks the modpack, and downloads everything. Pass `--minecraft-dir` to target an instance other than the vanilla launcher's default, or `--no-install-loader` if that instance already has a loader set up (e.g. it's a Prism/MultiMC instance).
+
+If you already use Prism Launcher or MultiMC, their native `.mrpack` import already handles the initial install (right Minecraft version, right Fabric loader, all mods) — after that, run `hopper modpack add` (below) pointed at the same instance's `.minecraft` folder so hopper takes over managing its `mods` folder from then on.
+
 ### Managing Modpacks
 
-#### Adding
+A tracked modpack is a named group of mods living in your active profile — not a separate entity with its own output directory or lifecycle. It coexists with anything you add yourself via `hopper add`; see [Adding Modpacks](#adding-modpacks) for how the identifier/URL argument works.
 
-When adding a modpack, you will configure the following:
+- `hopper modpack add <identifier-or-url> [--name <name>] [--no-overrides]` — starts tracking a modpack. Defaults to naming the group after the modpack's title (or filename, for a raw archive); `--no-overrides` skips installing its config-file overrides.
+- `hopper modpack list` — lists the modpack groups tracked in the active profile, alongside their source and mod count.
+- `hopper modpack remove <name> [--delete-mods]` — stops tracking a modpack group. By default this detaches its mods to freestanding (they're kept, just no longer tied to the group); pass `--delete-mods` to remove them too.
 
-- Output directory
-  - This defaults to `.minecraft`, which is the default Minecraft resources directory. You don't need to worry about this if you play with Mojang's launcher and use the default resources directory.
-- Whether to install modpack overrides
-
-> [!TIP]
-> You can also provide these settings as flags to avoid interactivity for things like scripts
-
-> [!NOTE]
-> Hopper will automatically switch to the newly added modpack
-
-#### Configuring
-
-You can configure these same settings afterwards by running `hopper modpack configure`. Again, you can provide these settings as flags.
-
-#### Manage
-
-You can list out all the modpacks you have added by running `hopper modpack list` or `hopper modpacks`.  
-Switch to a different modpack using `hopper modpack switch`.  
-Remove a modpack using `hopper modpack remove` and selecting the modpack you want to remove.
+There's no separate "switch" or "configure" command or an "active modpack" concept — since a modpack is just mods in a profile, [switching profiles](#manage) is how you switch between them, and `hopper upgrade` (see [Upgrading Modpacks](#upgrading-modpacks)) is how every tracked modpack stays current.
 
 ### Profiles
 
