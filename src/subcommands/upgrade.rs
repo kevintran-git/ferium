@@ -89,7 +89,7 @@ pub async fn get_platform_downloadables(
         .unwrap_or(20)
         .clamp(20, 50);
 
-    for mod_ in mods.to_vec() {
+    for mod_ in mods.iter().cloned() {
         mod_sender.send(mod_)?;
     }
 

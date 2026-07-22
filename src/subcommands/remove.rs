@@ -38,8 +38,8 @@ pub fn remove(
                             format!("{owner}/{repo}"),
                     },
                     match &mod_.identifier {
-                        ModIdentifier::CurseForgeProject(_, Some(pin)) => format!(" (📌 {pin})"),
-                        ModIdentifier::ModrinthProject(_, Some(pin))
+                        ModIdentifier::CurseForgeProject(_, Some(pin))
+                        | ModIdentifier::ModrinthProject(_, Some(pin))
                         | ModIdentifier::GitHubRepository(_, Some(pin)) => format!(" (📌 {pin})"),
                         _ => String::new(),
                     },

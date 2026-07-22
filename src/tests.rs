@@ -197,7 +197,7 @@ async fn add_shaderpack() {
                 subcommand: Some(PackSubCommands::Add {
                     identifiers: vec!["complementary-reimagined".to_owned()],
                     force: true,
-                    filters: FilterArguments::default(),
+                    filters: Box::default(),
                 }),
             },
             Some("empty_profile"),
@@ -215,7 +215,7 @@ async fn add_resourcepack() {
                 subcommand: Some(PackSubCommands::Add {
                     identifiers: vec!["fresh-animations".to_owned()],
                     force: true,
-                    filters: FilterArguments::default(),
+                    filters: Box::default(),
                 }),
             },
             Some("empty_profile"),
@@ -233,7 +233,7 @@ async fn add_shaderpack_wrong_kind() {
                 subcommand: Some(PackSubCommands::Add {
                     identifiers: vec!["starlight".to_owned()],
                     force: true,
-                    filters: FilterArguments::default(),
+                    filters: Box::default(),
                 }),
             },
             Some("empty_profile"),

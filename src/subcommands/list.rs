@@ -49,7 +49,7 @@ impl ListData {
     }
 }
 
-pub async fn verbose(mods: &mut Vec<Mod>, markdown: bool) -> Result<()> {
+pub async fn verbose(mods: &mut [Mod], markdown: bool) -> Result<()> {
     if !markdown {
         eprint!("Querying metadata... ");
     }
@@ -112,13 +112,13 @@ pub async fn verbose(mods: &mut Vec<Mod>, markdown: bool) -> Result<()> {
     }
 
     for project in &metadata {
-        let mod_ = mods
+        let matched = mods
             .iter_mut()
             .find(|mod_| mod_.identifier == project.id())
             .context("Could not find expected mod")?;
 
-        mod_.name = project.name().to_string();
-        mod_.slug = Some(project.slug().to_string());
+        matched.name = project.name().to_string();
+        matched.slug = Some(project.slug().to_string());
 
         if markdown {
             match project {
@@ -157,32 +157,58 @@ pub fn basic(profile: &Profile, mods: &[Mod], noun: &str) {
             .display(", ")
             .green(),
     );
-    for mod_ in mods {
+
+    for group in &profile.modpacks {
+        let grouped = mods
+            .iter()
+            .filter(|mod_| mod_.source_modpack.as_deref() == Some(group.name.as_str()))
+            .collect_vec();
+        if grouped.is_empty() {
+            continue;
+        }
+
+        let bar = "┃".cyan();
         println!(
-            "{:20}  {}{}",
-            match &mod_.identifier {
-                ModIdentifier::CurseForgeProject(id, _) =>
-                    format!("{} {:8}", "CF".red(), id.to_string().dimmed()),
-                ModIdentifier::ModrinthProject(id, _) =>
-                    format!("{} {:8}", "MR".green(), id.dimmed()),
-                ModIdentifier::GitHubRepository(..) => "GH".purple().to_string(),
-            },
-            match &mod_.identifier {
-                ModIdentifier::ModrinthProject(..) | ModIdentifier::CurseForgeProject(..) =>
-                    mod_.name.bold().to_string(),
-                ModIdentifier::GitHubRepository((owner, repo), _) =>
-                    format!("{}/{}", owner.dimmed(), repo.bold()),
-            },
-            match &mod_.identifier {
-                ModIdentifier::CurseForgeProject(_, Some(pin)) =>
-                    format!("\n   📌 {}", pin.to_string().dimmed()),
-                ModIdentifier::ModrinthProject(_, Some(pin))
-                | ModIdentifier::GitHubRepository(_, Some(pin)) =>
-                    format!("\n   📌 {}", pin.dimmed()),
-                _ => String::new(),
-            },
+            "{bar} {} {}",
+            group.name.bold(),
+            format!("({} {noun})", grouped.len()).yellow(),
         );
+        for mod_ in grouped {
+            println!("{bar} {}", mod_line(mod_).replace('\n', &format!("\n{bar} ")));
+        }
+        println!();
     }
+
+    for mod_ in mods.iter().filter(|mod_| mod_.source_modpack.is_none()) {
+        println!("{}", mod_line(mod_));
+    }
+}
+
+fn mod_line(mod_: &Mod) -> String {
+    format!(
+        "{:20}  {}{}",
+        match &mod_.identifier {
+            ModIdentifier::CurseForgeProject(id, _) =>
+                format!("{} {:8}", "CF".red(), id.to_string().dimmed()),
+            ModIdentifier::ModrinthProject(id, _) =>
+                format!("{} {:8}", "MR".green(), id.dimmed()),
+            ModIdentifier::GitHubRepository(..) => "GH".purple().to_string(),
+        },
+        match &mod_.identifier {
+            ModIdentifier::ModrinthProject(..) | ModIdentifier::CurseForgeProject(..) =>
+                mod_.name.bold().to_string(),
+            ModIdentifier::GitHubRepository((owner, repo), _) =>
+                format!("{}/{}", owner.dimmed(), repo.bold()),
+        },
+        match &mod_.identifier {
+            ModIdentifier::CurseForgeProject(_, Some(pin)) =>
+                format!("\n   📌 {}", pin.clone().dimmed()),
+            ModIdentifier::ModrinthProject(_, Some(pin))
+            | ModIdentifier::GitHubRepository(_, Some(pin)) =>
+                format!("\n   📌 {}", pin.dimmed()),
+            _ => String::new(),
+        },
+    )
 }
 
 pub fn curseforge(project: &CFMod) {

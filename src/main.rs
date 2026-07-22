@@ -478,7 +478,7 @@ async fn pack_subcommand(
         } => {
             let profile = get_active_profile(config)?;
             let override_profile = filters.override_profile;
-            let filters: Vec<_> = filters.try_into()?;
+            let filters: Vec<_> = (*filters).try_into()?;
 
             ensure!(
                 filters.is_empty() || identifiers.len() == 1,

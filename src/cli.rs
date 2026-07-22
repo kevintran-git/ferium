@@ -151,7 +151,7 @@ pub enum PackSubCommands {
         force: bool,
 
         #[command(flatten)]
-        filters: FilterArguments,
+        filters: Box<FilterArguments>,
     },
     /// List all tracked in the profile, and some metadata if verbose
     List {
