@@ -120,17 +120,19 @@ pub async fn verbose(mods: &mut [Mod], markdown: bool) -> Result<()> {
         matched.name = project.name().to_string();
         matched.slug = Some(project.slug().to_string());
 
+        let pin = pin_of(&matched.identifier);
+
         if markdown {
             match project {
-                ListData::CF(p) => curseforge_md(p),
-                ListData::MD(p, t) => modrinth_md(p, t),
-                ListData::GH(p, _) => github_md(p),
+                ListData::CF(p) => curseforge_md(p, pin),
+                ListData::MD(p, t) => modrinth_md(p, t, pin),
+                ListData::GH(p, _) => github_md(p, pin),
             }
         } else {
             match project {
-                ListData::CF(p) => curseforge(p),
-                ListData::MD(p, t) => modrinth(p, t),
-                ListData::GH(p, r) => github(p, r),
+                ListData::CF(p) => curseforge(p, pin),
+                ListData::MD(p, t) => modrinth(p, t, pin),
+                ListData::GH(p, r) => github(p, r, pin),
             }
         }
     }
@@ -184,6 +186,14 @@ pub fn basic(profile: &Profile, mods: &[Mod], noun: &str) {
     }
 }
 
+fn pin_of(identifier: &ModIdentifier) -> Option<&str> {
+    match identifier {
+        ModIdentifier::CurseForgeProject(_, pin)
+        | ModIdentifier::ModrinthProject(_, pin)
+        | ModIdentifier::GitHubRepository(_, pin) => pin.as_deref(),
+    }
+}
+
 fn mod_line(mod_: &Mod) -> String {
     format!(
         "{:20}  {}{}",
@@ -200,18 +210,11 @@ fn mod_line(mod_: &Mod) -> String {
             ModIdentifier::GitHubRepository((owner, repo), _) =>
                 format!("{}/{}", owner.dimmed(), repo.bold()),
         },
-        match &mod_.identifier {
-            ModIdentifier::CurseForgeProject(_, Some(pin)) =>
-                format!("\n   📌 {}", pin.clone().dimmed()),
-            ModIdentifier::ModrinthProject(_, Some(pin))
-            | ModIdentifier::GitHubRepository(_, Some(pin)) =>
-                format!("\n   📌 {}", pin.dimmed()),
-            _ => String::new(),
-        },
+        pin_of(&mod_.identifier).map_or(String::new(), |pin| format!("\n   📌 {}", pin.dimmed())),
     )
 }
 
-pub fn curseforge(project: &CFMod) {
+pub fn curseforge(project: &CFMod, pin: Option<&str>) {
     println!(
         "
 {}
@@ -222,7 +225,7 @@ pub fn curseforge(project: &CFMod) {
   Open Source:  {}
   Downloads:    {}
   Authors:      {}
-  Categories:   {}",
+  Categories:   {}{}",
         project.name.bold(),
         project.summary.trim().italic(),
         project.links.website_url.to_string().blue().underline(),
@@ -252,10 +255,14 @@ pub fn curseforge(project: &CFMod) {
             .display(", ")
             .clone()
             .magenta(),
+        pin.map_or(String::new(), |pin| format!(
+            "\n  Pinned:       📌 {}",
+            pin.dimmed()
+        )),
     );
 }
 
-pub fn modrinth(project: &Project, team_members: &[TeamMember]) {
+pub fn modrinth(project: &Project, team_members: &[TeamMember], pin: Option<&str>) {
     println!(
         "
 {}
@@ -267,7 +274,7 @@ pub fn modrinth(project: &Project, team_members: &[TeamMember]) {
   Downloads:    {}
   Authors:      {}
   Categories:   {}
-  License:      {}{}",
+  License:      {}{}{}",
         project.title.bold(),
         project.description.italic(),
         format!("https://modrinth.com/mod/{}", project.slug)
@@ -296,11 +303,15 @@ pub fn modrinth(project: &Project, team_members: &[TeamMember]) {
         project.license.url.as_ref().map_or(String::new(), |url| {
             format!(" ({})", url.to_string().blue().underline())
         }),
+        pin.map_or(String::new(), |pin| format!(
+            "\n  Pinned:       📌 {}",
+            pin.dimmed()
+        )),
     );
 }
 
 #[expect(clippy::unwrap_used)]
-pub fn github(repo: &Repository, releases: &[Release]) {
+pub fn github(repo: &Repository, releases: &[Release], pin: Option<&str>) {
     let mut downloads = 0;
     for release in releases {
         for asset in &release.assets {
@@ -318,7 +329,7 @@ pub fn github(repo: &Repository, releases: &[Release]) {
   Downloads:    {}
   Authors:      {}
   Topics:       {}
-  License:      {}",
+  License:      {}{}",
         repo.name.bold(),
         repo.description
             .as_ref()
@@ -351,10 +362,14 @@ pub fn github(repo: &Repository, releases: &[Release]) {
                     format!(" ({})", url.to_string().blue().underline())
                 })
             )),
+        pin.map_or(String::new(), |pin| format!(
+            "\n  Pinned:       📌 {}",
+            pin.dimmed()
+        )),
     );
 }
 
-pub fn curseforge_md(project: &CFMod) {
+pub fn curseforge_md(project: &CFMod, pin: Option<&str>) {
     println!(
         "
 **[{}]({})**  
@@ -365,7 +380,7 @@ _{}_
 | Source      | CurseForge `{}` |
 | Open Source | {}              |
 | Authors     | {}              |
-| Categories  | {}              |",
+| Categories  | {}              |{}",
         project.name.trim(),
         project.links.website_url,
         project.summary.trim(),
@@ -385,10 +400,11 @@ _{}_
             .iter()
             .map(|category| &category.name)
             .display(", "),
+        pin.map_or(String::new(), |pin| format!("\n| Pinned      | `{pin}` |")),
     );
 }
 
-pub fn modrinth_md(project: &Project, team_members: &[TeamMember]) {
+pub fn modrinth_md(project: &Project, team_members: &[TeamMember], pin: Option<&str>) {
     println!(
         "
 **[{}](https://modrinth.com/mod/{})**  
@@ -399,7 +415,7 @@ _{}_
 | Source      | Modrinth `{}` |
 | Open Source | {}            |
 | Author      | {}            |
-| Categories  | {}            |",
+| Categories  | {}            |{}",
         project.title.trim(),
         project.id,
         project.description.trim(),
@@ -416,11 +432,12 @@ _{}_
             ))
             .display(", "),
         project.categories.iter().display(", "),
+        pin.map_or(String::new(), |pin| format!("\n| Pinned      | `{pin}` |")),
     );
 }
 
 #[expect(clippy::unwrap_used)]
-pub fn github_md(repo: &Repository) {
+pub fn github_md(repo: &Repository, pin: Option<&str>) {
     println!(
         "
 **[{}]({})**{}
@@ -429,7 +446,7 @@ pub fn github_md(repo: &Repository) {
 |-------------|-------------|
 | Source      | GitHub `{}` |
 | Open Source | Yes         |
-| Owner       | [{}]({})    |{}",
+| Owner       | [{}]({})    |{}{}",
         repo.name,
         repo.html_url.as_ref().unwrap(),
         repo.description
@@ -444,5 +461,6 @@ pub fn github_md(repo: &Repository) {
             "\n| Topics | {} |",
             topics.iter().display(", ")
         )),
+        pin.map_or(String::new(), |pin| format!("\n| Pinned | `{pin}` |")),
     );
 }
