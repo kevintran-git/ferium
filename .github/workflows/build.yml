@@ -99,13 +99,13 @@ jobs:
           Compress-Archive -Path "target\x86_64-pc-windows-msvc\release\hopper.exe" -DestinationPath "out\hopper-windows-msvc.zip"
 
       - name: Build Linux
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && env.BUILD_LINUX == 'true'
         run: |
           cargo build --target=x86_64-unknown-linux-musl --release
           zip -r out/hopper-linux.zip -j target/x86_64-unknown-linux-musl/release/hopper
 
       - name: Build ARM Linux
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && env.BUILD_LINUX == 'true'
         run: |
           cargo rustc --target=aarch64-unknown-linux-musl --release -- -Clink-self-contained=yes -Clinker=rust-lld
           zip -r out/hopper-linux-arm64.zip -j target/aarch64-unknown-linux-musl/release/hopper
@@ -113,13 +113,13 @@ jobs:
           CC_aarch64_unknown_linux_musl: clang-17
 
       - name: Build Linux nogui
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && env.BUILD_LINUX == 'true'
         run: |
           cargo build --target=x86_64-unknown-linux-musl --release --no-default-features
           zip -r out/hopper-linux-nogui.zip -j target/x86_64-unknown-linux-musl/release/hopper
 
       - name: Build ARM Linux nogui
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && env.BUILD_LINUX == 'true'
         run: |
           cargo rustc --target=aarch64-unknown-linux-musl --release --no-default-features -- -Clink-self-contained=yes -Clinker=rust-lld
           zip -r out/hopper-linux-arm64-nogui.zip -j target/aarch64-unknown-linux-musl/release/hopper
