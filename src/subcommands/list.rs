@@ -2,9 +2,12 @@ use crate::TICK;
 use anyhow::{Context as _, Result};
 use colored::Colorize as _;
 use ferinth::structures::{project::Project, user::TeamMember};
-use furse::structures::mod_structs::Mod;
+use furse::structures::mod_structs::Mod as CFMod;
 use libium::{
-    config::structs::{ModIdentifier, Profile},
+    config::{
+        filters::ProfileParameters as _,
+        structs::{Mod, ModIdentifier, Profile},
+    },
     iter_ext::IterExt as _,
     CURSEFORGE_API, GITHUB_API, MODRINTH_API,
 };
@@ -12,7 +15,7 @@ use octocrab::models::{repos::Release, Repository};
 use tokio::task::JoinSet;
 
 enum ListData {
-    CF(Box<Mod>),
+    CF(Box<CFMod>),
     MD(Box<Project>, Vec<TeamMember>),
     GH(Box<Repository>, Vec<Release>),
 }
@@ -46,7 +49,7 @@ impl ListData {
     }
 }
 
-pub async fn verbose(profile: &mut Profile, markdown: bool) -> Result<()> {
+pub async fn verbose(mods: &mut Vec<Mod>, markdown: bool) -> Result<()> {
     if !markdown {
         eprint!("Querying metadata... ");
     }
@@ -54,7 +57,7 @@ pub async fn verbose(profile: &mut Profile, markdown: bool) -> Result<()> {
     let mut tasks = JoinSet::new();
     let mut mr_ids = Vec::new();
     let mut cf_ids = Vec::new();
-    for mod_ in &profile.mods {
+    for mod_ in mods.iter() {
         match mod_.identifier.clone() {
             ModIdentifier::CurseForgeProject(project_id, _) => cf_ids.push(project_id),
             ModIdentifier::ModrinthProject(project_id, _) => mr_ids.push(project_id),
@@ -109,8 +112,7 @@ pub async fn verbose(profile: &mut Profile, markdown: bool) -> Result<()> {
     }
 
     for project in &metadata {
-        let mod_ = profile
-            .mods
+        let mod_ = mods
             .iter_mut()
             .find(|mod_| mod_.identifier == project.id())
             .context("Could not find expected mod")?;
@@ -136,7 +138,54 @@ pub async fn verbose(profile: &mut Profile, markdown: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn curseforge(project: &Mod) {
+pub fn basic(profile: &Profile, mods: &[Mod], noun: &str) {
+    println!(
+        "{} {} on {} {}\n",
+        profile.name.bold(),
+        format!("({} {noun})", mods.len()).yellow(),
+        profile
+            .filters
+            .mod_loader()
+            .map(ToString::to_string)
+            .unwrap_or_default()
+            .purple(),
+        profile
+            .filters
+            .game_versions()
+            .unwrap_or(&vec![])
+            .iter()
+            .display(", ")
+            .green(),
+    );
+    for mod_ in mods {
+        println!(
+            "{:20}  {}{}",
+            match &mod_.identifier {
+                ModIdentifier::CurseForgeProject(id, _) =>
+                    format!("{} {:8}", "CF".red(), id.to_string().dimmed()),
+                ModIdentifier::ModrinthProject(id, _) =>
+                    format!("{} {:8}", "MR".green(), id.dimmed()),
+                ModIdentifier::GitHubRepository(..) => "GH".purple().to_string(),
+            },
+            match &mod_.identifier {
+                ModIdentifier::ModrinthProject(..) | ModIdentifier::CurseForgeProject(..) =>
+                    mod_.name.bold().to_string(),
+                ModIdentifier::GitHubRepository((owner, repo), _) =>
+                    format!("{}/{}", owner.dimmed(), repo.bold()),
+            },
+            match &mod_.identifier {
+                ModIdentifier::CurseForgeProject(_, Some(pin)) =>
+                    format!("\n   📌 {}", pin.to_string().dimmed()),
+                ModIdentifier::ModrinthProject(_, Some(pin))
+                | ModIdentifier::GitHubRepository(_, Some(pin)) =>
+                    format!("\n   📌 {}", pin.dimmed()),
+                _ => String::new(),
+            },
+        );
+    }
+}
+
+pub fn curseforge(project: &CFMod) {
     println!(
         "
 {}
@@ -226,7 +275,6 @@ pub fn modrinth(project: &Project, team_members: &[TeamMember]) {
 
 #[expect(clippy::unwrap_used)]
 pub fn github(repo: &Repository, releases: &[Release]) {
-    // Calculate number of downloads
     let mut downloads = 0;
     for release in releases {
         for asset in &release.assets {
@@ -280,7 +328,7 @@ pub fn github(repo: &Repository, releases: &[Release]) {
     );
 }
 
-pub fn curseforge_md(project: &Mod) {
+pub fn curseforge_md(project: &CFMod) {
     println!(
         "
 **[{}]({})**  

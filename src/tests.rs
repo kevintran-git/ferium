@@ -2,7 +2,10 @@
 
 use crate::{
     actual_main,
-    cli::{Ferium, FilterArguments, ModpackSubCommands, Platform, ProfileSubCommands, SubCommands},
+    cli::{
+        Ferium, FilterArguments, ModpackSubCommands, PackSubCommands, Platform,
+        ProfileSubCommands, SubCommands,
+    },
 };
 use libium::config::structs::ModLoader;
 use std::{
@@ -183,6 +186,60 @@ async fn add_github() {
         ))
         .await,
         Ok(()),
+    ));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn add_shaderpack() {
+    assert!(matches!(
+        actual_main(get_args(
+            SubCommands::Shaderpack {
+                subcommand: Some(PackSubCommands::Add {
+                    identifiers: vec!["complementary-reimagined".to_owned()],
+                    force: true,
+                    filters: FilterArguments::default(),
+                }),
+            },
+            Some("empty_profile"),
+        ))
+        .await,
+        Ok(()),
+    ));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn add_resourcepack() {
+    assert!(matches!(
+        actual_main(get_args(
+            SubCommands::Resourcepack {
+                subcommand: Some(PackSubCommands::Add {
+                    identifiers: vec!["fresh-animations".to_owned()],
+                    force: true,
+                    filters: FilterArguments::default(),
+                }),
+            },
+            Some("empty_profile"),
+        ))
+        .await,
+        Ok(()),
+    ));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn add_shaderpack_wrong_kind() {
+    assert!(matches!(
+        actual_main(get_args(
+            SubCommands::Shaderpack {
+                subcommand: Some(PackSubCommands::Add {
+                    identifiers: vec!["starlight".to_owned()],
+                    force: true,
+                    filters: FilterArguments::default(),
+                }),
+            },
+            Some("empty_profile"),
+        ))
+        .await,
+        Err(_),
     ));
 }
 

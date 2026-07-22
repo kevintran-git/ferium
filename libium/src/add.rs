@@ -1,7 +1,7 @@
 use crate::{
     config::{
         filters::{Filter, ReleaseChannel},
-        structs::{ModIdentifier, ModLoader, Profile},
+        structs::{ModIdentifier, ModLoader, Profile, ProjectKind},
     },
     iter_ext::IterExt as _,
     upgrade::{check, Metadata},
@@ -24,8 +24,8 @@ pub enum Error {
     Incompatible(#[from] check::Error),
     #[error("The project does not exist")]
     DoesNotExist,
-    #[error("The project is not a mod")]
-    NotAMod,
+    #[error("The project is not a {0}")]
+    WrongProjectKind(&'static str),
     #[error("The specified version pin does not exist for this mod")]
     IncorrectVersionPin,
     #[error("The identifier provided is not in the correct format")]
@@ -127,6 +127,7 @@ pub fn parse_id(id: String) -> Result<ModIdentifier> {
 /// Performs checks on the mods to see whether they're compatible with the profile if `perform_checks` is true
 pub async fn add(
     profile: &mut Profile,
+    kind: ProjectKind,
     identifiers: Vec<ModIdentifier>,
     perform_checks: bool,
     override_profile: bool,
@@ -261,7 +262,7 @@ pub async fn add(
         let res = 'cf_check: {
             let identifier = ModIdentifier::CurseForgeProject(project.id, pin.clone());
 
-            if profile.mods.iter().any(|mod_| {
+            if profile.mods(kind).iter().any(|mod_| {
                 mod_.name.eq_ignore_ascii_case(&project.name)
                     || mod_.identifier.is_same_as(&identifier)
             }) {
@@ -272,8 +273,8 @@ pub async fn add(
                 break 'cf_check Err(Error::DistributionDenied);
             }
 
-            if !project.links.website_url.as_str().contains("mc-mods") {
-                break 'cf_check Err(Error::NotAMod);
+            if !project.links.website_url.as_str().contains(kind.cf_url_segment()) {
+                break 'cf_check Err(Error::WrongProjectKind(kind.name()));
             }
 
             if let Some(pin) = pin {
@@ -324,13 +325,12 @@ pub async fn add(
                     }
                     .iter()
                     .filter(|f| {
-                        matches!(
-                            f,
-                            Filter::GameVersionStrict(_)
-                                | Filter::GameVersionMinor(_)
-                                | Filter::ModLoaderAny(_)
-                                | Filter::ModLoaderPrefer(_)
-                        )
+                        matches!(f, Filter::GameVersionStrict(_) | Filter::GameVersionMinor(_))
+                            || (kind.uses_mod_loader()
+                                && matches!(
+                                    f,
+                                    Filter::ModLoaderAny(_) | Filter::ModLoaderPrefer(_)
+                                ))
                     })
                     .cloned()
                     .collect_vec(),
@@ -339,6 +339,7 @@ pub async fn add(
             }
 
             profile.push_mod(
+                kind,
                 project.name.trim().to_string(),
                 identifier.clone(),
                 project.slug.clone(),
@@ -370,15 +371,15 @@ pub async fn add(
         let res = 'mr_check: {
             let identifier = ModIdentifier::ModrinthProject(project.id.clone(), pin.clone());
 
-            if profile.mods.iter().any(|mod_| {
+            if profile.mods(kind).iter().any(|mod_| {
                 mod_.name.eq_ignore_ascii_case(&project.title)
                     || mod_.identifier.is_same_as(&identifier)
             }) {
                 break 'mr_check Err(Error::AlreadyAdded);
             }
 
-            if project.project_type != ferinth::structures::project::ProjectType::Mod {
-                break 'mr_check Err(Error::NotAMod);
+            if project.project_type != kind.mr_project_type() {
+                break 'mr_check Err(Error::WrongProjectKind(kind.name()));
             }
 
             if let Some(pin) = &pin {
@@ -407,13 +408,12 @@ pub async fn add(
                     }
                     .iter()
                     .filter(|f| {
-                        matches!(
-                            f,
-                            Filter::GameVersionStrict(_)
-                                | Filter::GameVersionMinor(_)
-                                | Filter::ModLoaderAny(_)
-                                | Filter::ModLoaderPrefer(_)
-                        )
+                        matches!(f, Filter::GameVersionStrict(_) | Filter::GameVersionMinor(_))
+                            || (kind.uses_mod_loader()
+                                && matches!(
+                                    f,
+                                    Filter::ModLoaderAny(_) | Filter::ModLoaderPrefer(_)
+                                ))
                     })
                     .cloned()
                     .collect_vec(),
@@ -422,6 +422,7 @@ pub async fn add(
             }
 
             profile.push_mod(
+                kind,
                 project.title.trim().to_owned(),
                 identifier.clone(),
                 project.slug.to_owned(),
@@ -448,7 +449,7 @@ pub async fn add(
                 let identifier =
                     ModIdentifier::GitHubRepository((owner.clone(), repo.clone()), pin.clone());
 
-                if profile.mods.iter().any(|mod_| {
+                if profile.mods(kind).iter().any(|mod_| {
                     mod_.name.eq_ignore_ascii_case(repo.as_ref())
                         || matches!(
                             &mod_.identifier,
@@ -500,16 +501,17 @@ pub async fn add(
                             })
                             .collect_vec()
                             .iter(),
-                        if override_profile {
+                        kind.applicable_filters(if override_profile {
                             profile.filters.clone()
                         } else {
                             [profile.filters.clone(), filters.clone()].concat()
-                        },
+                        }),
                     )
                     .await?;
                 }
 
                 profile.push_mod(
+                    kind,
                     repo.clone(),
                     identifier.clone(),
                     repo.clone(),

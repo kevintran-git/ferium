@@ -26,16 +26,12 @@ mod tests;
 
 use anyhow::{anyhow, bail, ensure, Context as _, Result};
 use clap::{CommandFactory, Parser};
-use cli::{Ferium, ModpackSubCommands, ProfileSubCommands, SubCommands};
+use cli::{Ferium, ModpackSubCommands, PackSubCommands, ProfileSubCommands, SubCommands};
 use colored::{ColoredString, Colorize};
 use indicatif::ProgressStyle;
-use libium::{
-    config::{
-        self,
-        filters::ProfileParameters as _,
-        structs::{Config, ModIdentifier, Modpack, Profile},
-    },
-    iter_ext::IterExt as _,
+use libium::config::{
+    self,
+    structs::{Config, Mod, Modpack, Profile, ProjectKind},
 };
 use std::{
     env::{set_var, var_os},
@@ -234,7 +230,7 @@ async fn actual_main(mut cli_app: Ferium) -> Result<()> {
             }
 
             let (successes, failures) =
-                libium::add(profile, send_ids, !force, false, vec![]).await?;
+                libium::add(profile, ProjectKind::Mod, send_ids, !force, false, vec![]).await?;
             spinner.finish_and_clear();
 
             did_add_fail = add::display_successes_failures(&successes, failures);
@@ -258,62 +254,26 @@ async fn actual_main(mut cli_app: Ferium) -> Result<()> {
                 .map(libium::add::parse_id)
                 .collect::<libium::add::Result<Vec<_>>>()?;
 
-            let (successes, failures) =
-                libium::add(profile, identifiers, !force, override_profile, filters).await?;
+            let (successes, failures) = libium::add(
+                profile,
+                ProjectKind::Mod,
+                identifiers,
+                !force,
+                override_profile,
+                filters,
+            )
+            .await?;
 
             did_add_fail = add::display_successes_failures(&successes, failures);
         }
         SubCommands::List { verbose, markdown } => {
             let profile = get_active_profile(&mut config)?;
-            check_empty_profile(profile)?;
+            check_empty(&profile.mods, "mods")?;
 
             if verbose {
-                subcommands::list::verbose(profile, markdown).await?;
+                subcommands::list::verbose(&mut profile.mods, markdown).await?;
             } else {
-                println!(
-                    "{} {} on {} {}\n",
-                    profile.name.bold(),
-                    format!("({} mods)", profile.mods.len()).yellow(),
-                    profile
-                        .filters
-                        .mod_loader()
-                        .map(ToString::to_string)
-                        .unwrap_or_default()
-                        .purple(),
-                    profile
-                        .filters
-                        .game_versions()
-                        .unwrap_or(&vec![])
-                        .iter()
-                        .display(", ")
-                        .green(),
-                );
-                for mod_ in &profile.mods {
-                    println!(
-                        "{:20}  {}{}",
-                        match &mod_.identifier {
-                            ModIdentifier::CurseForgeProject(id, _) =>
-                                format!("{} {:8}", "CF".red(), id.to_string().dimmed()),
-                            ModIdentifier::ModrinthProject(id, _) =>
-                                format!("{} {:8}", "MR".green(), id.dimmed()),
-                            ModIdentifier::GitHubRepository(..) => "GH".purple().to_string(),
-                        },
-                        match &mod_.identifier {
-                            ModIdentifier::ModrinthProject(..)
-                            | ModIdentifier::CurseForgeProject(..) => mod_.name.bold().to_string(),
-                            ModIdentifier::GitHubRepository((owner, repo), _) =>
-                                format!("{}/{}", owner.dimmed(), repo.bold()),
-                        },
-                        match &mod_.identifier {
-                            ModIdentifier::CurseForgeProject(_, Some(pin)) =>
-                                format!("\n   📌 {}", pin.to_string().dimmed()),
-                            ModIdentifier::ModrinthProject(_, Some(pin))
-                            | ModIdentifier::GitHubRepository(_, Some(pin)) =>
-                                format!("\n   📌 {}", pin.dimmed()),
-                            _ => String::new(),
-                        },
-                    );
-                }
+                subcommands::list::basic(profile, &profile.mods, "mods");
             }
         }
         SubCommands::Modpack { subcommand } => {
@@ -465,19 +425,32 @@ async fn actual_main(mut cli_app: Ferium) -> Result<()> {
         }
         SubCommands::Remove { mod_names } => {
             let profile = get_active_profile(&mut config)?;
-            check_empty_profile(profile)?;
-            subcommands::remove(profile, mod_names)?;
+            check_empty(&profile.mods, "mods")?;
+            subcommands::remove(&mut profile.mods, mod_names, "mod")?;
         }
         SubCommands::Upgrade => {
             let profile = get_active_profile(&mut config)?;
-            check_empty_profile(profile)?;
+            check_empty(&profile.mods, "mods")?;
             subcommands::upgrade(profile).await?;
+        }
+        SubCommands::Shaderpack { subcommand } => {
+            did_add_fail = pack_subcommand(&mut config, ProjectKind::ShaderPack, subcommand).await?;
+        }
+        SubCommands::Resourcepack { subcommand } => {
+            did_add_fail =
+                pack_subcommand(&mut config, ProjectKind::ResourcePack, subcommand).await?;
         }
     }
 
     config.profiles.iter_mut().for_each(|profile| {
         profile
             .mods
+            .sort_unstable_by_key(|mod_| mod_.name.to_lowercase());
+        profile
+            .shaderpacks
+            .sort_unstable_by_key(|mod_| mod_.name.to_lowercase());
+        profile
+            .resourcepacks
             .sort_unstable_by_key(|mod_| mod_.name.to_lowercase());
     });
     config::write_config(config_path, &config)?;
@@ -529,11 +502,75 @@ fn get_active_modpack(config: &mut Config) -> Result<&mut Modpack> {
     Ok(&mut config.modpacks[config.active_modpack])
 }
 
-/// Check if `profile` is empty, and if so return an error
-fn check_empty_profile(profile: &Profile) -> Result<()> {
+/// Check if `mods` is empty, and if so return an error
+fn check_empty(mods: &[Mod], noun: &str) -> Result<()> {
     ensure!(
-        !profile.mods.is_empty(),
-        "Your currently selected profile is empty! Run `ferium help` to see how to add mods"
+        !mods.is_empty(),
+        "Your currently selected profile has no {noun}! Run `ferium help` to see how to add some"
     );
     Ok(())
+}
+
+async fn pack_subcommand(
+    config: &mut Config,
+    kind: ProjectKind,
+    subcommand: Option<PackSubCommands>,
+) -> Result<bool> {
+    let subcommand = subcommand.unwrap_or(PackSubCommands::List {
+        verbose: false,
+        markdown: false,
+    });
+    let noun = kind.name();
+    let plural_noun = format!("{noun}s");
+
+    match subcommand {
+        PackSubCommands::Add {
+            identifiers,
+            force,
+            filters,
+        } => {
+            let profile = get_active_profile(config)?;
+            let override_profile = filters.override_profile;
+            let filters: Vec<_> = filters.into();
+
+            ensure!(
+                filters.is_empty() || identifiers.len() == 1,
+                "You can only configure filters when adding a single item!"
+            );
+
+            let identifiers = identifiers
+                .into_iter()
+                .map(libium::add::parse_id)
+                .collect::<libium::add::Result<Vec<_>>>()?;
+
+            let (successes, failures) =
+                libium::add(profile, kind, identifiers, !force, override_profile, filters)
+                    .await?;
+
+            Ok(add::display_successes_failures(&successes, failures))
+        }
+        PackSubCommands::List { verbose, markdown } => {
+            let profile = get_active_profile(config)?;
+            check_empty(profile.mods(kind), &plural_noun)?;
+
+            if verbose {
+                subcommands::list::verbose(profile.mods_mut(kind), markdown).await?;
+            } else {
+                subcommands::list::basic(profile, profile.mods(kind), &plural_noun);
+            }
+            Ok(false)
+        }
+        PackSubCommands::Remove { names } => {
+            let profile = get_active_profile(config)?;
+            check_empty(profile.mods(kind), &plural_noun)?;
+            subcommands::remove(profile.mods_mut(kind), names, noun)?;
+            Ok(false)
+        }
+        PackSubCommands::Upgrade => {
+            let profile = get_active_profile(config)?;
+            check_empty(profile.mods(kind), &plural_noun)?;
+            subcommands::upgrade::upgrade_packs(profile, kind).await?;
+            Ok(false)
+        }
+    }
 }

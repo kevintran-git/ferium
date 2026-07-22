@@ -113,10 +113,47 @@ Full writeup of the comparison lives in Claude's memory
       is skipped instead of aborting the whole check (bug #7).
 
 ### Phase 3 — Shaderpacks & resourcepacks (new feature, from modmgr)
-- [ ] Extend `Profile` with tracked shaderpacks/resourcepacks (reusing
-      `Mod`/`ModIdentifier`), default-empty for backward compatibility.
-- [ ] CLI subcommands mirroring mod add/list/remove/upgrade, targeting
-      `output_dir/shaderpacks` and `output_dir/resourcepacks`.
+- [x] Extended `Profile` with `shaderpacks: Vec<Mod>` and
+      `resourcepacks: Vec<Mod>`, both `#[serde(default)]` and skipped when
+      empty, so old configs load unchanged. Added `ProjectKind` (`Mod` /
+      `ResourcePack` / `ShaderPack`) plus `Profile::mods(kind)` /
+      `mods_mut(kind)` / `dir(kind)` so the add/list/remove/upgrade paths can
+      be generic over which list they're operating on instead of tripling
+      the logic.
+- [x] CLI subcommands mirroring mod add/list/remove/upgrade:
+      `ferium shaderpack <add|list|remove|upgrade>` and
+      `ferium resourcepack <add|list|remove|upgrade>`, sharing one
+      `PackSubCommands` definition.
+- [x] Corrected the original plan text above: shaderpacks/resourcepacks
+      download to `shaderpacks`/`resourcepacks` directories *alongside*
+      `output_dir` (i.e. siblings of the mods folder), not nested inside it.
+      Nesting them inside `output_dir` (the mods folder) would mean Iris/
+      OptiFine and Minecraft's resource pack picker never actually find the
+      files, since they always look next to `mods`, not inside it.
+- [x] `libium::add()` now takes a `ProjectKind` and checks the right thing
+      per kind instead of hardcoding "is this a mod": CurseForge project
+      category via the site URL segment (`mc-mods` / `texture-packs` /
+      `shaders`), Modrinth via `project_type`. Wrong-kind adds now fail with
+      "The project is not a shader pack" etc. instead of silently accepting
+      any project ID.
+- [x] Mod-loader filters (Fabric/Forge/Quilt/NeoForge) don't apply to
+      shaderpacks/resourcepacks, so they're stripped from the profile's
+      filters before checking/downloading non-mod kinds
+      (`ProjectKind::applicable_filters`).
+- [x] Found and fixed a real bug this surfaced: `check::select_latest`
+      unconditionally required a `ModLoaderPrefer` filter to pick a final
+      answer (it only computed the winning index from the "run last"
+      mod-loader-preference filters). Since mod profiles always carry one,
+      this was never exercised — but stripping mod-loader filters for
+      shaderpacks/resourcepacks meant every add/upgrade failed with
+      "Failed to find a compatible combination" even for fully compatible
+      projects. Fixed by falling back to the intersected, non-mod-loader
+      filter results directly when there's no mod-loader filter to run last.
+- [x] Added `tests::add_shaderpack`, `add_resourcepack`, and
+      `add_shaderpack_wrong_kind`; verified end-to-end by hand against real
+      Modrinth projects (add, wrong-kind rejection, list, upgrade — which
+      downloaded into sibling `shaderpacks`/`resourcepacks` directories as
+      expected — and remove).
 
 ### Phase 4 — Big subsystems
 - [ ] Recursive dependency resolution using structured dependency metadata
@@ -152,3 +189,7 @@ Full writeup of the comparison lives in Claude's memory
 - 2026-07-21: Phase 2 done — GitHub GraphQL error-path crash fix, early bail
   on GitHub rate limit / bad CurseForge key during `upgrade`, top-level error
   hints, and a Modrinth version-with-no-files crash fix.
+- 2026-07-21: Phase 3 done — shaderpack/resourcepack tracking with new
+  `ferium shaderpack`/`ferium resourcepack` subcommands, `ProjectKind`-based
+  generalization of add/list/remove/upgrade, and a `check::select_latest`
+  bug fix (see above) that the new mod-loader-less code path surfaced.

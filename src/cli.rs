@@ -37,10 +37,6 @@ pub struct Ferium {
 
 #[derive(Clone, Debug, Subcommand)]
 pub enum SubCommands {
-    /*  TODO:
-        Use this for filter arguments:
-        https://docs.rs/clap/latest/clap/_derive/_tutorial/chapter_3/index.html#argument-relations
-    */
     /// Add mods to the profile
     Add {
         /// The identifier(s) of the mod/project/repository
@@ -117,6 +113,52 @@ pub enum SubCommands {
         mod_names: Vec<String>,
     },
     /// Download and install the latest compatible version of your mods
+    #[clap(visible_aliases = ["download", "install"])]
+    Upgrade,
+    /// Add, list, remove, or upgrade shaderpacks tracked in the profile
+    Shaderpack {
+        #[clap(subcommand)]
+        subcommand: Option<PackSubCommands>,
+    },
+    /// Add, list, remove, or upgrade resourcepacks tracked in the profile
+    Resourcepack {
+        #[clap(subcommand)]
+        subcommand: Option<PackSubCommands>,
+    },
+}
+
+#[derive(Clone, Debug, Subcommand)]
+pub enum PackSubCommands {
+    /// Add to the profile
+    Add {
+        /// The identifier(s) of the mod/project/repository
+        #[clap(required = true)]
+        identifiers: Vec<String>,
+
+        /// Temporarily ignore game version checks and add anyway
+        #[clap(long, short, visible_alias = "override")]
+        force: bool,
+
+        #[command(flatten)]
+        filters: FilterArguments,
+    },
+    /// List all tracked in the profile, and some metadata if verbose
+    List {
+        /// Show additional information
+        #[clap(long, short)]
+        verbose: bool,
+        /// Output information in markdown format and alphabetical order
+        #[clap(long, short, visible_alias = "md")]
+        markdown: bool,
+    },
+    /// Remove from the profile.
+    /// Optionally, provide a list of names or IDs to remove.
+    #[clap(visible_alias = "rm")]
+    Remove {
+        /// List of project IDs or case-insensitive names to remove
+        names: Vec<String>,
+    },
+    /// Download and install the latest compatible versions
     #[clap(visible_aliases = ["download", "install"])]
     Upgrade,
 }

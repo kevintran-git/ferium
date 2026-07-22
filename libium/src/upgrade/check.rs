@@ -33,9 +33,7 @@ pub async fn get_version_groups() -> Result<&'static Vec<Vec<String>>> {
         let mut v = vec![vec![]];
         for version in versions {
             if version.version_type == GameVersionType::Release {
-                // Push the version to the latest group
                 v.last_mut().unwrap().push(version.version);
-                // Create a new group if a new major versions is present
                 if version.major {
                     v.push(vec![]);
                 }
@@ -132,7 +130,6 @@ pub async fn select_latest(
 
     for filter in &filters {
         if let Filter::ModLoaderPrefer(_) = filter {
-            // ModLoaderPrefer has to be run last
             run_last.push((
                 filter,
                 filter.filter(download_files.clone().enumerate()).await?,
@@ -160,12 +157,8 @@ pub async fn select_latest(
         return Err(Error::FilterEmpty(empty_filtrations));
     }
 
-    // Get the indices of the filtrations
     let mut filter_results = filter_results.into_iter().map(|(_, set)| set);
 
-    // Intersect all the index_sets by folding the HashSet::intersection method
-    // Ref: https://www.reddit.com/r/rust/comments/5v35l6/intersection_of_more_than_two_sets
-    // Here we're getting the non-ModLoaderPrefer indices first
     let final_indices = filter_results
         .next()
         .map(|set_1| {
@@ -175,31 +168,35 @@ pub async fn select_latest(
         })
         .unwrap_or_default();
 
-    let download_files = download_files.into_iter().enumerate().filter_map(|(i, f)| {
-        if final_indices.contains(&i) {
-            Some((i, f))
-        } else {
-            None
+    let final_index = if run_last.is_empty() {
+        final_indices.into_iter().min().ok_or(Error::IntersectFailure)?
+    } else {
+        let download_files = download_files.into_iter().enumerate().filter_map(|(i, f)| {
+            if final_indices.contains(&i) {
+                Some((i, f))
+            } else {
+                None
+            }
+        });
+
+        let mut filter_results = vec![];
+        for (filter, _) in run_last {
+            filter_results.push(filter.filter(download_files.clone()).await?)
         }
-    });
+        let mut filter_results = filter_results.into_iter();
 
-    let mut filter_results = vec![];
-    for (filter, _) in run_last {
-        filter_results.push(filter.filter(download_files.clone()).await?)
-    }
-    let mut filter_results = filter_results.into_iter();
-
-    let final_index = filter_results
-        .next()
-        .and_then(|set_1| {
-            filter_results
-                .fold(set_1, |set_a, set_b| {
-                    set_a.intersection(&set_b).copied().collect_hashset()
-                })
-                .into_iter()
-                .min()
-        })
-        .ok_or(Error::IntersectFailure)?;
+        filter_results
+            .next()
+            .and_then(|set_1| {
+                filter_results
+                    .fold(set_1, |set_a, set_b| {
+                        set_a.intersection(&set_b).copied().collect_hashset()
+                    })
+                    .into_iter()
+                    .min()
+            })
+            .ok_or(Error::IntersectFailure)?
+    };
 
     Ok(final_index)
 }

@@ -1,7 +1,10 @@
 use super::filters::Filter;
 use derive_more::derive::Display;
 use serde::{Deserialize, Serialize};
-use std::{path::PathBuf, str::FromStr};
+use std::{
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 pub const CURRENT_CONFIG_VERSION: u32 = 1;
 
@@ -68,6 +71,14 @@ pub struct Profile {
 
     pub mods: Vec<Mod>,
 
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
+    pub shaderpacks: Vec<Mod>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
+    pub resourcepacks: Vec<Mod>,
+
     #[serde(skip_serializing)]
     game_version: Option<String>,
     #[serde(skip_serializing)]
@@ -93,6 +104,8 @@ impl Profile {
                 Filter::GameVersionStrict(game_versions),
             ],
             mods: vec![],
+            shaderpacks: vec![],
+            resourcepacks: vec![],
             game_version: None,
             mod_loader: None,
         }
@@ -120,13 +133,14 @@ impl Profile {
 
     pub fn push_mod(
         &mut self,
+        kind: ProjectKind,
         name: String,
         identifier: ModIdentifier,
         slug: String,
         override_filters: bool,
         filters: Vec<Filter>,
     ) {
-        self.mods.push(Mod {
+        self.mods_mut(kind).push(Mod {
             name,
             slug: Some(slug),
             identifier,
@@ -136,6 +150,34 @@ impl Profile {
             check_mod_loader: None,
         })
     }
+
+    pub const fn mods(&self, kind: ProjectKind) -> &Vec<Mod> {
+        match kind {
+            ProjectKind::Mod => &self.mods,
+            ProjectKind::ResourcePack => &self.resourcepacks,
+            ProjectKind::ShaderPack => &self.shaderpacks,
+        }
+    }
+
+    pub const fn mods_mut(&mut self, kind: ProjectKind) -> &mut Vec<Mod> {
+        match kind {
+            ProjectKind::Mod => &mut self.mods,
+            ProjectKind::ResourcePack => &mut self.resourcepacks,
+            ProjectKind::ShaderPack => &mut self.shaderpacks,
+        }
+    }
+
+    pub fn dir(&self, kind: ProjectKind) -> PathBuf {
+        match kind {
+            ProjectKind::Mod => self.output_dir.clone(),
+            ProjectKind::ResourcePack => sibling_dir(&self.output_dir, "resourcepacks"),
+            ProjectKind::ShaderPack => sibling_dir(&self.output_dir, "shaderpacks"),
+        }
+    }
+}
+
+fn sibling_dir(dir: &Path, name: &str) -> PathBuf {
+    dir.parent().unwrap_or(dir).join(name)
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -343,6 +385,55 @@ impl FromStr for ModLoader {
             "forge" => Ok(Self::Forge),
             "neoforge" => Ok(Self::NeoForge),
             _ => Err(Self::Err {}),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectKind {
+    Mod,
+    ResourcePack,
+    ShaderPack,
+}
+
+impl ProjectKind {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Mod => "mod",
+            Self::ResourcePack => "resource pack",
+            Self::ShaderPack => "shader pack",
+        }
+    }
+
+    pub const fn cf_url_segment(self) -> &'static str {
+        match self {
+            Self::Mod => "mc-mods",
+            Self::ResourcePack => "texture-packs",
+            Self::ShaderPack => "shaders",
+        }
+    }
+
+    pub const fn mr_project_type(self) -> ferinth::structures::project::ProjectType {
+        use ferinth::structures::project::ProjectType;
+        match self {
+            Self::Mod => ProjectType::Mod,
+            Self::ResourcePack => ProjectType::Resourcepack,
+            Self::ShaderPack => ProjectType::Shader,
+        }
+    }
+
+    pub const fn uses_mod_loader(self) -> bool {
+        matches!(self, Self::Mod)
+    }
+
+    pub fn applicable_filters(self, filters: Vec<Filter>) -> Vec<Filter> {
+        if self.uses_mod_loader() {
+            filters
+        } else {
+            filters
+                .into_iter()
+                .filter(|f| !matches!(f, Filter::ModLoaderPrefer(_) | Filter::ModLoaderAny(_)))
+                .collect()
         }
     }
 }

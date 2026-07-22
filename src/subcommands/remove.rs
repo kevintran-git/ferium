@@ -2,17 +2,16 @@ use anyhow::{bail, Result};
 use colored::Colorize as _;
 use inquire::MultiSelect;
 use libium::{
-    config::structs::{ModIdentifier, Profile},
+    config::structs::{Mod, ModIdentifier},
     iter_ext::IterExt as _,
 };
 
-/// If `to_remove` is empty, display a list of projects in the profile to select from and remove selected ones
+/// If `to_remove` is empty, display a list of projects in `mods` to select from and remove selected ones
 ///
 /// Else, search the given strings with the projects' name and IDs and remove them
-pub fn remove(profile: &mut Profile, to_remove: Vec<String>) -> Result<()> {
+pub fn remove(mods: &mut Vec<Mod>, to_remove: Vec<String>, noun: &str) -> Result<()> {
     let mut indices_to_remove = if to_remove.is_empty() {
-        let mod_info = profile
-            .mods
+        let mod_info = mods
             .iter()
             .map(|mod_| {
                 format!(
@@ -38,7 +37,7 @@ pub fn remove(profile: &mut Profile, to_remove: Vec<String>) -> Result<()> {
                 )
             })
             .collect_vec();
-        MultiSelect::new("Select mods to remove", mod_info.clone())
+        MultiSelect::new(&format!("Select {noun} to remove"), mod_info.clone())
             .raw_prompt_skippable()?
             .unwrap_or_default()
             .iter()
@@ -47,7 +46,7 @@ pub fn remove(profile: &mut Profile, to_remove: Vec<String>) -> Result<()> {
     } else {
         let mut items_to_remove = Vec::new();
         for to_remove in to_remove {
-            if let Some(index) = profile.mods.iter().position(|mod_| {
+            if let Some(index) = mods.iter().position(|mod_| {
                 mod_.name.eq_ignore_ascii_case(&to_remove)
                     || match &mod_.identifier {
                         ModIdentifier::CurseForgeProject(id, _) => id.to_string() == to_remove,
@@ -63,19 +62,18 @@ pub fn remove(profile: &mut Profile, to_remove: Vec<String>) -> Result<()> {
             }) {
                 items_to_remove.push(index);
             } else {
-                bail!("A mod with ID or name {to_remove} is not present in this profile");
+                bail!("No {noun} with ID or name {to_remove} found in this profile");
             }
         }
         items_to_remove
     };
 
-    // Sort the indices in ascending order to fix moving indices during removal
     indices_to_remove.sort_unstable();
     indices_to_remove.reverse();
 
     let mut removed = Vec::new();
     for index in indices_to_remove {
-        removed.push(profile.mods.remove(index).name);
+        removed.push(mods.remove(index).name);
     }
 
     if !removed.is_empty() {

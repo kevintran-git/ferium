@@ -8,16 +8,18 @@ use colored::Colorize as _;
 use indicatif::ProgressBar;
 use libium::{
     config::{
-        filters::ProfileParameters as _,
-        structs::{Mod, ModIdentifier, ModLoader, Profile},
+        filters::{Filter, ProfileParameters as _},
+        structs::{Mod, ModIdentifier, ModLoader, Profile, ProjectKind},
     },
     upgrade::{mod_downloadable, DownloadData},
 };
 use parking_lot::Mutex;
 use std::{
+    ffi::OsString,
     fs::read_dir,
     io::{stdin, IsTerminal as _},
     mem::take,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc, Arc,
@@ -41,14 +43,17 @@ fn is_rate_limited_or_unauthorised(err: &mod_downloadable::Error) -> bool {
     }
 }
 
-/// Get the latest compatible downloadable for the mods in `profile`
+/// Get the latest compatible downloadable for `mods`
 ///
 /// If an error occurs with a resolving task, instead of failing immediately,
 /// resolution will continue and the error return flag is set to true.
 ///
 /// Pressing enter on a terminal aborts any still-unresolved mods and
 /// continues with whatever has resolved so far.
-pub async fn get_platform_downloadables(profile: &Profile) -> Result<(Vec<DownloadData>, bool)> {
+pub async fn get_platform_downloadables(
+    mods: &[Mod],
+    filters: &[Filter],
+) -> Result<(Vec<DownloadData>, bool)> {
     let progress_bar = Arc::new(Mutex::new(ProgressBar::new(0).with_style(STYLE_NO.clone())));
     let mut tasks = JoinSet::new();
     let mut done_mods = Vec::new();
@@ -77,15 +82,14 @@ pub async fn get_platform_downloadables(profile: &Profile) -> Result<(Vec<Downlo
     progress_bar
         .lock()
         .enable_steady_tick(Duration::from_millis(100));
-    let pad_len = profile
-        .mods
+    let pad_len = mods
         .iter()
         .map(|m| m.name.len())
         .max()
         .unwrap_or(20)
         .clamp(20, 50);
 
-    for mod_ in profile.mods.clone() {
+    for mod_ in mods.to_vec() {
         mod_sender.send(mod_)?;
     }
 
@@ -105,7 +109,7 @@ pub async fn get_platform_downloadables(profile: &Profile) -> Result<(Vec<Downlo
             done_mods.push(mod_.identifier.clone());
             progress_bar.lock().inc_length(1);
 
-            let filters = profile.filters.clone();
+            let filters = filters.to_vec();
             let dep_sender = Arc::clone(&mod_sender);
             let progress_bar = Arc::clone(&progress_bar);
 
@@ -204,7 +208,7 @@ pub async fn get_platform_downloadables(profile: &Profile) -> Result<(Vec<Downlo
 }
 
 pub async fn upgrade(profile: &Profile) -> Result<()> {
-    let (mut to_download, error) = get_platform_downloadables(profile).await?;
+    let (to_download, error) = get_platform_downloadables(&profile.mods, &profile.filters).await?;
     let mut to_install = Vec::new();
     if profile.output_dir.join("user").exists()
         && profile.filters.mod_loader() != Some(&ModLoader::Quilt)
@@ -222,7 +226,22 @@ pub async fn upgrade(profile: &Profile) -> Result<()> {
         }
     }
 
-    clean(&profile.output_dir, &mut to_download, &mut to_install).await?;
+    finish_upgrade(&profile.output_dir, to_download, to_install, error).await
+}
+
+pub async fn upgrade_packs(profile: &Profile, kind: ProjectKind) -> Result<()> {
+    let filters = kind.applicable_filters(profile.filters.clone());
+    let (to_download, error) = get_platform_downloadables(profile.mods(kind), &filters).await?;
+    finish_upgrade(&profile.dir(kind), to_download, Vec::new(), error).await
+}
+
+async fn finish_upgrade(
+    output_dir: &Path,
+    mut to_download: Vec<DownloadData>,
+    mut to_install: Vec<(OsString, PathBuf)>,
+    error: bool,
+) -> Result<()> {
+    clean(output_dir, &mut to_download, &mut to_install).await?;
     to_download
         .iter_mut()
         .map(|thing| thing.output = thing.filename().into())
@@ -230,8 +249,8 @@ pub async fn upgrade(profile: &Profile) -> Result<()> {
     if to_download.is_empty() && to_install.is_empty() {
         println!("\n{}", "All up to date!".bold());
     } else {
-        println!("\n{}\n", "Downloading Mod Files".bold());
-        download(profile.output_dir.clone(), to_download, to_install).await?;
+        println!("\n{}\n", "Downloading Files".bold());
+        download(output_dir.to_path_buf(), to_download, to_install).await?;
     }
 
     if error {
