@@ -1,7 +1,7 @@
 contact_links:
   - name: Discussions
-    url: https://github.com/gorilla-devs/ferium/discussions
+    url: https://github.com/kevintran-git/ferium/discussions
     about: |
       If you are not reporting a bug or requesting a feature,
-      e.g. you want to get help on how to use ferium,
+      e.g. you want to get help on how to use hopper,
       use GitHub Discussions instead of creating an issue.

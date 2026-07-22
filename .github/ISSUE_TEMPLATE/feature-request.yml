@@ -16,8 +16,8 @@ body:
   - type: textarea
     attributes:
       label: Your Solution(s)
-      description: How could ferium solve your problem?
+      description: How could hopper solve your problem?
       placeholder: |
         For example:
-        Ferium should do ...
-        Instead of doing ..., ferium should ... instead.
+        Hopper should do ...
+        Instead of doing ..., hopper should ... instead.

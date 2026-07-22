@@ -15,7 +15,7 @@ body:
       description: How do you reproduce this bug? You can also describe how you encountered the bug if you are unsure.
       placeholder: |
         For example:
-        1. Run `ferium ...`
+        1. Run `hopper ...`
         2. ... doesn't properly change
         3. Run command again
         4. ... changes properly
@@ -37,17 +37,8 @@ body:
   - type: dropdown
     attributes:
       label: Installation Method
-      description: How did you install ferium?
+      description: How did you install hopper?
       options:
-        - AUR (pacman)
-        - Homebrew
-        - winget
-        - Scoop
-        - Pacstall
-        - Nixpkgs
-        - LoaTcHi's overlay (Gentoo Portage)
-        - XBPS
-        - crates.io (`cargo install`)
         - GitHub Releases (manually installed)
         - Locally compiled
         - GitHub Actions
@@ -56,8 +47,8 @@ body:
 
   - type: input
     attributes:
-      label: Ferium version
-      description: What is the output of `ferium --version`?
+      label: Hopper version
+      description: What is the output of `hopper --version`?
     validations:
       required: true
 

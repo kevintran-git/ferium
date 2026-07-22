@@ -3,7 +3,7 @@
 use crate::{
     actual_main,
     cli::{
-        Ferium, FilterArguments, ModpackSubCommands, PackSubCommands, Platform,
+        Hopper, FilterArguments, ModpackSubCommands, PackSubCommands, Platform,
         ProfileSubCommands, SubCommands,
     },
 };
@@ -14,7 +14,7 @@ use std::{
     path::PathBuf,
 };
 
-const DEFAULT: Ferium = Ferium {
+const DEFAULT: Hopper = Hopper {
     subcommand: SubCommands::Profile { subcommand: None },
     threads: None,
     parallel_tasks: 10,
@@ -23,7 +23,7 @@ const DEFAULT: Ferium = Ferium {
     config_file: None,
 };
 
-fn get_args(subcommand: SubCommands, config_file: Option<&str>) -> Ferium {
+fn get_args(subcommand: SubCommands, config_file: Option<&str>) -> Hopper {
     let running = PathBuf::from(".")
         .join("tests")
         .join("configs")
@@ -33,7 +33,7 @@ fn get_args(subcommand: SubCommands, config_file: Option<&str>) -> Ferium {
     if let Some(config_file) = config_file {
         copy(format!("./tests/configs/{config_file}.json"), &running).unwrap();
     }
-    Ferium {
+    Hopper {
         subcommand,
         config_file: Some(running),
         ..DEFAULT

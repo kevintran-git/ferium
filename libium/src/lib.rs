@@ -29,7 +29,7 @@ pub static CURSEFORGE_API: LazyLock<furse::Furse> = LazyLock::new(|| {
 
 pub static MODRINTH_API: LazyLock<ferinth::Ferinth<()>> = LazyLock::new(|| {
     ferinth::Ferinth::<()>::new(
-        "ferium",
+        "hopper",
         None,
         Some("Discord: therookiecoder"),
     )

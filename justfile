@@ -1,11 +1,11 @@
 default: install-dev
 set windows-powershell := true
 
-# Install ferium to cargo's binary folder
+# Install hopper to cargo's binary folder
 install:
   cargo install --force --path .
 
-# Install ferium to cargo's binary folder, but with faster compilation (offline & debug)
+# Install hopper to cargo's binary folder, but with faster compilation (offline & debug)
 install-dev:
   cargo install --offline --debug --force --path .
 

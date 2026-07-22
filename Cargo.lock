@@ -717,31 +717,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ferium"
-version = "5.0.0"
-dependencies = [
- "anyhow",
- "clap",
- "clap_complete",
- "colored",
- "ferinth",
- "fs_extra",
- "furse",
- "indicatif",
- "inquire",
- "libium",
- "octocrab",
- "parking_lot",
- "rand 0.10.1",
- "reqwest 0.12.28",
- "rfd",
- "rustls",
- "serde_json",
- "size",
- "tokio",
-]
-
-[[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1010,6 +985,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6303bc9732ae41b04cb554b844a762b4115a61bfaa81e3e83050991eeb56863f"
 dependencies = [
  "digest 0.11.3",
+]
+
+[[package]]
+name = "hopper"
+version = "5.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "clap_complete",
+ "colored",
+ "ferinth",
+ "fs_extra",
+ "furse",
+ "indicatif",
+ "inquire",
+ "libium",
+ "octocrab",
+ "parking_lot",
+ "rand 0.10.1",
+ "reqwest 0.12.28",
+ "rfd",
+ "rustls",
+ "serde_json",
+ "size",
+ "tokio",
 ]
 
 [[package]]

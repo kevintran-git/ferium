@@ -12,11 +12,13 @@ furse = "1.6"
 
 [package]
 
-name = "ferium"
+name = "hopper"
 version = "5.0.0"
-repository = "https://github.com/gorilla-devs/ferium"
-description = "Fast CLI program for managing Minecraft mods and modpacks from Modrinth, CurseForge, and Github Releases"
+repository = "https://github.com/kevintran-git/ferium"
+description = "Fast CLI program for managing Minecraft mods and modpacks from Modrinth, CurseForge, and Github Releases (Hopper, a fork of ferium)"
 authors = [
+    "Kevin Tran (kevintran-git)",
+
     ## Code
     "Ilesh Thiada (theRookieCoder) <ileshkt@gmail.com>", # AUR, Scoop, Homebrew, winget
     "atamakahere (atamakahere-git)",

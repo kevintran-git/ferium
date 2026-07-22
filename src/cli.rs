@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 #[derive(Clone, Debug, Parser)]
 #[clap(author, version, about)]
-pub struct Ferium {
+pub struct Hopper {
     #[clap(subcommand)]
     pub subcommand: SubCommands,
     /// Sets the number of worker threads the tokio runtime will use.
@@ -29,7 +29,7 @@ pub struct Ferium {
     pub curseforge_api_key: Option<String>,
     /// Set the file to read the config from.
     /// This does not change the `cache` and `tmp` directories.
-    /// You can also use the environment variable `FERIUM_CONFIG_FILE`.
+    /// You can also use the environment variable `HOPPER_CONFIG_FILE`.
     #[clap(long, short, visible_aliases = ["config", "conf"])]
     #[clap(value_hint(ValueHint::FilePath))]
     pub config_file: Option<PathBuf>,

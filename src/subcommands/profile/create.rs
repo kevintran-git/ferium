@@ -89,7 +89,6 @@ pub async fn create(
             "There are no profiles configured to import mods from"
         );
 
-        // If the profile name has been provided as an option
         if let Some(profile_name) = from {
             let selection = config
                 .profiles
@@ -117,10 +116,10 @@ pub async fn create(
 
     println!(
         "{}",
-        "After adding your mods, remember to run `ferium upgrade` to download them!".yellow()
+        "After adding your mods, remember to run `hopper upgrade` to download them!".yellow()
     );
 
     config.profiles.push(profile);
-    config.active_profile = config.profiles.len() - 1; // Make created profile active
+    config.active_profile = config.profiles.len() - 1;
     Ok(())
 }

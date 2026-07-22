@@ -78,7 +78,7 @@ pub async fn upgrade(modpack: &'_ Modpack) -> Result<()> {
                     }
                     Err(DistributionDeniedError(mod_id, file_id)) => {
                         if !msg_shown {
-                            println!("\n{}", "The following mod(s) have denied 3rd parties such as Ferium from downloading it".red().bold());
+                            println!("\n{}", "The following mod(s) have denied Hopper, a 3rd-party tool, from downloading it".red().bold());
                         }
                         msg_shown = true;
                         tasks.spawn(async move {

@@ -76,7 +76,7 @@ jobs:
           MACOSX_DEPLOYMENT_TARGET: 10.12 # Sierra
         run: |
           cargo build --target=x86_64-apple-darwin --release
-          zip -r out/ferium-macos-x64.zip -j target/x86_64-apple-darwin/release/ferium
+          zip -r out/hopper-macos-x64.zip -j target/x86_64-apple-darwin/release/hopper
 
       - name: Build macOS ARM
         if: matrix.os == 'macos-latest'
@@ -84,25 +84,25 @@ jobs:
           MACOSX_DEPLOYMENT_TARGET: 11.0 # Big Sur
         run: |
           cargo build --target=aarch64-apple-darwin --release
-          zip -r out/ferium-macos-arm.zip -j target/aarch64-apple-darwin/release/ferium
+          zip -r out/hopper-macos-arm.zip -j target/aarch64-apple-darwin/release/hopper
 
       - name: Build Windows MSVC
         if: matrix.os == 'windows-latest'
         run: |
           cargo build --target=x86_64-pc-windows-msvc --release
-          Compress-Archive -Path "target\x86_64-pc-windows-msvc\release\ferium.exe" -DestinationPath "out\ferium-windows-msvc.zip"
+          Compress-Archive -Path "target\x86_64-pc-windows-msvc\release\hopper.exe" -DestinationPath "out\hopper-windows-msvc.zip"
 
       - name: Build Linux
         if: matrix.os == 'ubuntu-latest'
         run: |
           cargo build --target=x86_64-unknown-linux-musl --release
-          zip -r out/ferium-linux.zip -j target/x86_64-unknown-linux-musl/release/ferium
+          zip -r out/hopper-linux.zip -j target/x86_64-unknown-linux-musl/release/hopper
 
       - name: Build ARM Linux
         if: matrix.os == 'ubuntu-latest'
         run: |
           cargo rustc --target=aarch64-unknown-linux-musl --release -- -Clink-self-contained=yes -Clinker=rust-lld
-          zip -r out/ferium-linux-arm64.zip -j target/aarch64-unknown-linux-musl/release/ferium
+          zip -r out/hopper-linux-arm64.zip -j target/aarch64-unknown-linux-musl/release/hopper
         env:
           CC_aarch64_unknown_linux_musl: clang-17
 
@@ -110,13 +110,13 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           cargo build --target=x86_64-unknown-linux-musl --release --no-default-features
-          zip -r out/ferium-linux-nogui.zip -j target/x86_64-unknown-linux-musl/release/ferium
+          zip -r out/hopper-linux-nogui.zip -j target/x86_64-unknown-linux-musl/release/hopper
 
       - name: Build ARM Linux nogui
         if: matrix.os == 'ubuntu-latest'
         run: |
-          cargo rustc --target=aarch64-unknown-linux-musl --release --no-default-features -- -Clink-self-contained=yes -Clinker=rust-lld 
-          zip -r out/ferium-linux-arm64-nogui.zip -j target/aarch64-unknown-linux-musl/release/ferium
+          cargo rustc --target=aarch64-unknown-linux-musl --release --no-default-features -- -Clink-self-contained=yes -Clinker=rust-lld
+          zip -r out/hopper-linux-arm64-nogui.zip -j target/aarch64-unknown-linux-musl/release/hopper
         env:
           CC_aarch64_unknown_linux_musl: clang-17
 
@@ -124,11 +124,11 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           cargo build --target=x86_64-pc-windows-gnu --release
-          zip -r out/ferium-windows-gnu.zip -j target/x86_64-pc-windows-gnu/release/ferium.exe
+          zip -r out/hopper-windows-gnu.zip -j target/x86_64-pc-windows-gnu/release/hopper.exe
 
       - name: Upload build artefacts
         uses: actions/upload-artifact@v4
         with:
           name: binaries-${{ matrix.os }}
-          path: out/ferium*.zip
+          path: out/hopper*.zip
           if-no-files-found: error

@@ -26,7 +26,7 @@ mod tests;
 
 use anyhow::{anyhow, bail, ensure, Context as _, Result};
 use clap::{CommandFactory, Parser};
-use cli::{Ferium, ModpackSubCommands, PackSubCommands, ProfileSubCommands, SubCommands};
+use cli::{Hopper, ModpackSubCommands, PackSubCommands, ProfileSubCommands, SubCommands};
 use colored::{ColoredString, Colorize};
 use indicatif::ProgressStyle;
 use libium::config::{
@@ -75,11 +75,11 @@ fn main() -> ExitCode {
         colored::control::set_virtual_terminal(true).unwrap();
     }
 
-    let cli = Ferium::parse();
+    let cli = Hopper::parse();
 
     let mut builder = tokio::runtime::Builder::new_multi_thread();
     builder.enable_all();
-    builder.thread_name("ferium-worker");
+    builder.thread_name("hopper-worker");
     if let Some(threads) = cli.threads {
         builder.worker_threads(threads);
     }
@@ -120,14 +120,14 @@ fn main() -> ExitCode {
     }
 }
 
-async fn actual_main(mut cli_app: Ferium) -> Result<()> {
+async fn actual_main(mut cli_app: Hopper) -> Result<()> {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     if let SubCommands::Complete { shell } = cli_app.subcommand {
         clap_complete::generate(
             shell,
-            &mut Ferium::command(),
-            "ferium",
+            &mut Hopper::command(),
+            "hopper",
             &mut std::io::stdout(),
         );
         return Ok(());
@@ -163,7 +163,7 @@ async fn actual_main(mut cli_app: Ferium) -> Result<()> {
         .join("config.json");
     let config_path = &cli_app
         .config_file
-        .or_else(|| var_os("FERIUM_CONFIG_FILE").map(Into::into))
+        .or_else(|| var_os("HOPPER_CONFIG_FILE").map(Into::into))
         .unwrap_or({
             #[cfg(target_os = "macos")]
             {
@@ -346,7 +346,7 @@ async fn actual_main(mut cli_app: Ferium) -> Result<()> {
             }
             if default_flag {
                 println!(
-                    "{} ferium modpack help {}",
+                    "{} hopper modpack help {}",
                     "Use".yellow(),
                     "for more information about this subcommand".yellow()
                 );
@@ -417,7 +417,7 @@ async fn actual_main(mut cli_app: Ferium) -> Result<()> {
             }
             if default_flag {
                 println!(
-                    "{} ferium profile help {}",
+                    "{} hopper profile help {}",
                     "Use".yellow(),
                     "for more information about this subcommand".yellow()
                 );
@@ -466,7 +466,7 @@ async fn actual_main(mut cli_app: Ferium) -> Result<()> {
 fn get_active_profile(config: &mut Config) -> Result<&mut Profile> {
     match config.profiles.len() {
         0 => {
-            bail!("There are no profiles configured, add a profile using `ferium profile create`")
+            bail!("There are no profiles configured, add a profile using `hopper profile create`")
         }
         1 => config.active_profile = 0,
         n if config.active_profile >= n => {
@@ -486,7 +486,7 @@ fn get_active_profile(config: &mut Config) -> Result<&mut Profile> {
 /// Get the active modpack with error handling
 fn get_active_modpack(config: &mut Config) -> Result<&mut Modpack> {
     match config.modpacks.len() {
-        0 => bail!("There are no modpacks configured, add a modpack using `ferium modpack add`"),
+        0 => bail!("There are no modpacks configured, add a modpack using `hopper modpack add`"),
         1 => config.active_modpack = 0,
         n if n <= config.active_modpack => {
             println!(
@@ -506,7 +506,7 @@ fn get_active_modpack(config: &mut Config) -> Result<&mut Modpack> {
 fn check_empty(mods: &[Mod], noun: &str) -> Result<()> {
     ensure!(
         !mods.is_empty(),
-        "Your currently selected profile has no {noun}! Run `ferium help` to see how to add some"
+        "Your currently selected profile has no {noun}! Run `hopper help` to see how to add some"
     );
     Ok(())
 }
