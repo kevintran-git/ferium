@@ -24,6 +24,11 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       CARGO_TERM_COLOR: always
+      # Flip to 'true' to re-enable Linux artifact builds (currently broken:
+      # aws-lc-sys fails to link for aarch64-unknown-linux-musl, see
+      # https://github.com/aws/aws-lc-rs/issues/569 and
+      # https://github.com/zed-industries/zed/issues/24880)
+      BUILD_LINUX: 'false'
     steps:
       - uses: actions/checkout@v4
       - name: Create `out/`
