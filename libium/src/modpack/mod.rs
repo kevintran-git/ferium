@@ -1,5 +1,6 @@
 pub mod add;
 pub mod curseforge;
+pub mod group;
 pub mod modrinth;
 
 pub use zip_extensions::zip_extract::zip_extract;

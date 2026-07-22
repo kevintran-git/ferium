@@ -1484,6 +1484,7 @@ name = "libium"
 version = "1.32.0"
 dependencies = [
  "base64",
+ "chrono",
  "clap",
  "derive_more",
  "directories",

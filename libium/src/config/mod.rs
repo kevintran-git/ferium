@@ -1,33 +1,41 @@
 pub mod filters;
 pub mod structs;
 use std::{
-    fs::{create_dir_all, rename, File},
-    io::{BufReader, Result},
+    fs::{copy, create_dir_all, read_to_string, rename, File},
+    io::Result,
     path::Path,
 };
 
-/// Open the config file at `path` and deserialise it into a config struct
 pub fn read_config(path: impl AsRef<Path>) -> Result<structs::Config> {
-    let path = match path.as_ref().canonicalize() {
-        Ok(path) => path,
-        Err(_) => {
-            create_dir_all(path.as_ref().parent().expect("Invalid config directory"))?;
-            write_config(&path, &structs::Config::default())?;
-            path.as_ref().to_owned()
-        }
-    };
+    let path = path.as_ref();
+    if !path.try_exists()? {
+        create_dir_all(path.parent().expect("Invalid config directory"))?;
+        write_config(path, &structs::Config::default())?;
+    }
 
-    let config_file = BufReader::new(File::open(&path)?);
-    let mut config: structs::Config = serde_json::from_reader(config_file)?;
+    let contents = read_to_string(path)?;
+    let mut config: structs::Config = serde_json::from_str(&contents)?;
+    let raw: serde_json::Value = serde_json::from_str(&contents)?;
 
-    config.migrate();
+    let version_before = config.version;
+    config.migrate(&raw);
+    if config.version != version_before {
+        write_config(path, &config)?;
+    }
 
     Ok(config)
 }
 
-/// Serialise `config` and write it to the config file at `path`
 pub fn write_config(path: impl AsRef<Path>, config: &structs::Config) -> Result<()> {
     let path = path.as_ref();
+    if path.exists() {
+        let mut backup_path = path.as_os_str().to_owned();
+        backup_path.push(".bak");
+        if let Err(err) = copy(path, backup_path) {
+            eprintln!("Warning: failed to back up config before writing: {err}");
+        }
+    }
+
     let mut temp_path = path.as_os_str().to_owned();
     temp_path.push(".tmp");
     let temp_path = Path::new(&temp_path);

@@ -31,7 +31,7 @@ use colored::{ColoredString, Colorize};
 use indicatif::ProgressStyle;
 use libium::config::{
     self,
-    structs::{Config, Mod, Modpack, Profile, ProjectKind},
+    structs::{Config, Mod, Profile, ProjectKind},
 };
 use std::{
     env::{set_var, var_os},
@@ -137,11 +137,6 @@ async fn actual_main(mut cli_app: Hopper) -> Result<()> {
             subcommand: Some(ProfileSubCommands::List),
         };
     }
-    if let SubCommands::Modpacks = cli_app.subcommand {
-        cli_app.subcommand = SubCommands::Modpack {
-            subcommand: Some(ModpackSubCommands::List),
-        };
-    }
 
     if let Some(token) = cli_app.github_token {
         if !token.is_empty() {
@@ -181,11 +176,12 @@ async fn actual_main(mut cli_app: Hopper) -> Result<()> {
     }
 
     let mut config = config::read_config(config_path)?;
+    let config_snapshot = serde_json::to_string(&config)?;
 
     let mut did_add_fail = false;
 
     match cli_app.subcommand {
-        SubCommands::Complete { .. } | SubCommands::Profiles | SubCommands::Modpacks => {
+        SubCommands::Complete { .. } | SubCommands::Profiles => {
             unreachable!();
         }
         SubCommands::Scan {
@@ -280,68 +276,26 @@ async fn actual_main(mut cli_app: Hopper) -> Result<()> {
             let mut default_flag = false;
             let subcommand = subcommand.unwrap_or_else(|| {
                 default_flag = true;
-                ModpackSubCommands::Info
+                ModpackSubCommands::List
             });
             match subcommand {
                 ModpackSubCommands::Add {
                     identifier,
-                    output_dir,
-                    install_overrides,
+                    name,
+                    no_overrides,
                 } => {
-                    if let Ok(project_id) = identifier.parse::<i32>() {
-                        subcommands::modpack::add::curseforge(
-                            &mut config,
-                            project_id,
-                            output_dir,
-                            install_overrides,
-                        )
-                        .await?;
-                    } else if let Err(err) = subcommands::modpack::add::modrinth(
-                        &mut config,
-                        &identifier,
-                        output_dir,
-                        install_overrides,
-                    )
-                    .await
-                    {
-                        return Err(
-                            if let Some(&ferinth::Error::InvalidIDorSlug) = err.downcast_ref() {
-                                anyhow!("Invalid identifier")
-                            } else {
-                                err
-                            },
-                        );
-                    }
-                }
-                ModpackSubCommands::Configure {
-                    output_dir,
-                    install_overrides,
-                } => {
-                    subcommands::modpack::configure(
-                        get_active_modpack(&mut config)?,
-                        output_dir,
-                        install_overrides,
-                    )?;
-                }
-                ModpackSubCommands::Delete {
-                    modpack_name,
-                    switch_to,
-                } => {
-                    subcommands::modpack::delete(&mut config, modpack_name, switch_to)?;
-                }
-                ModpackSubCommands::Info => {
-                    subcommands::modpack::info(get_active_modpack(&mut config)?, true);
+                    let profile = get_active_profile(&mut config)?;
+                    subcommands::modpack::add(profile, identifier, name, no_overrides).await?;
                 }
                 ModpackSubCommands::List => {
-                    for (i, modpack) in config.modpacks.iter().enumerate() {
-                        subcommands::modpack::info(modpack, i == config.active_modpack);
-                    }
+                    subcommands::modpack::list(get_active_profile(&mut config)?);
                 }
-                ModpackSubCommands::Switch { modpack_name } => {
-                    subcommands::modpack::switch(&mut config, modpack_name)?;
-                }
-                ModpackSubCommands::Upgrade => {
-                    subcommands::modpack::upgrade(get_active_modpack(&mut config)?).await?;
+                ModpackSubCommands::Remove {
+                    modpack_name,
+                    delete_mods,
+                } => {
+                    let profile = get_active_profile(&mut config)?;
+                    subcommands::modpack::remove(profile, modpack_name, delete_mods)?;
                 }
             }
             if default_flag {
@@ -351,6 +305,13 @@ async fn actual_main(mut cli_app: Hopper) -> Result<()> {
                     "for more information about this subcommand".yellow()
                 );
             }
+        }
+        SubCommands::Join {
+            identifier,
+            minecraft_dir,
+            no_install_loader,
+        } => {
+            subcommands::join(&mut config, identifier, minecraft_dir, no_install_loader).await?;
         }
         SubCommands::Profile { subcommand } => {
             let mut default_flag = false;
@@ -426,10 +387,13 @@ async fn actual_main(mut cli_app: Hopper) -> Result<()> {
         SubCommands::Remove { mod_names } => {
             let profile = get_active_profile(&mut config)?;
             check_empty(&profile.mods, "mods")?;
-            subcommands::remove(&mut profile.mods, mod_names, "mod")?;
+            subcommands::remove(profile, ProjectKind::Mod, mod_names, "mod")?;
         }
         SubCommands::Upgrade => {
             let profile = get_active_profile(&mut config)?;
+            for i in 0..profile.modpacks.len() {
+                subcommands::modpack::refresh_group(profile, i).await?;
+            }
             check_empty(&profile.mods, "mods")?;
             subcommands::upgrade(profile).await?;
         }
@@ -453,7 +417,9 @@ async fn actual_main(mut cli_app: Hopper) -> Result<()> {
             .resourcepacks
             .sort_unstable_by_key(|mod_| mod_.name.to_lowercase());
     });
-    config::write_config(config_path, &config)?;
+    if serde_json::to_string(&config)? != config_snapshot {
+        config::write_config(config_path, &config)?;
+    }
 
     if did_add_fail {
         Err(anyhow!(""))
@@ -481,25 +447,6 @@ fn get_active_profile(config: &mut Config) -> Result<&mut Profile> {
         _ => (),
     }
     Ok(&mut config.profiles[config.active_profile])
-}
-
-/// Get the active modpack with error handling
-fn get_active_modpack(config: &mut Config) -> Result<&mut Modpack> {
-    match config.modpacks.len() {
-        0 => bail!("There are no modpacks configured, add a modpack using `hopper modpack add`"),
-        1 => config.active_modpack = 0,
-        n if n <= config.active_modpack => {
-            println!(
-                "{}",
-                "Active modpack specified incorrectly, please pick a modpack to use"
-                    .red()
-                    .bold()
-            );
-            subcommands::modpack::switch(config, None)?;
-        }
-        _ => (),
-    }
-    Ok(&mut config.modpacks[config.active_modpack])
 }
 
 /// Check if `mods` is empty, and if so return an error
@@ -563,7 +510,7 @@ async fn pack_subcommand(
         PackSubCommands::Remove { names } => {
             let profile = get_active_profile(config)?;
             check_empty(profile.mods(kind), &plural_noun)?;
-            subcommands::remove(profile.mods_mut(kind), names, noun)?;
+            subcommands::remove(profile, kind, names, noun)?;
             Ok(false)
         }
         PackSubCommands::Upgrade => {

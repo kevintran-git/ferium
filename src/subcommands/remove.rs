@@ -2,14 +2,23 @@ use anyhow::{bail, Result};
 use colored::Colorize as _;
 use inquire::MultiSelect;
 use libium::{
-    config::structs::{Mod, ModIdentifier},
+    config::structs::{ModIdentifier, Profile, ProjectKind},
     iter_ext::IterExt as _,
 };
 
 /// If `to_remove` is empty, display a list of projects in `mods` to select from and remove selected ones
 ///
 /// Else, search the given strings with the projects' name and IDs and remove them
-pub fn remove(mods: &mut Vec<Mod>, to_remove: Vec<String>, noun: &str) -> Result<()> {
+///
+/// Removed mods that came from a modpack group are recorded in that group's `excluded` list so
+/// a later `hopper upgrade` doesn't silently re-add them.
+pub fn remove(
+    profile: &mut Profile,
+    kind: ProjectKind,
+    to_remove: Vec<String>,
+    noun: &str,
+) -> Result<()> {
+    let mods = profile.mods(kind);
     let mut indices_to_remove = if to_remove.is_empty() {
         let mod_info = mods
             .iter()
@@ -73,13 +82,25 @@ pub fn remove(mods: &mut Vec<Mod>, to_remove: Vec<String>, noun: &str) -> Result
 
     let mut removed = Vec::new();
     for index in indices_to_remove {
-        removed.push(mods.remove(index).name);
+        removed.push(profile.mods_mut(kind).remove(index));
+    }
+
+    for mod_ in &removed {
+        if let Some(group_name) = &mod_.source_modpack {
+            if let Some(group) = profile
+                .modpacks
+                .iter_mut()
+                .find(|g| &g.name == group_name)
+            {
+                group.excluded.push(mod_.identifier.clone());
+            }
+        }
     }
 
     if !removed.is_empty() {
         println!(
             "Removed {}",
-            removed.iter().map(|txt| txt.bold()).display(", ")
+            removed.iter().map(|mod_| mod_.name.bold()).display(", ")
         );
     }
 

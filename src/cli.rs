@@ -91,13 +91,24 @@ pub enum SubCommands {
         #[clap(long, short, visible_alias = "md")]
         markdown: bool,
     },
-    /// Add, configure, delete, switch, list, or upgrade modpacks
+    /// Add, list, or remove modpack groups tracked in the active profile
     Modpack {
         #[clap(subcommand)]
         subcommand: Option<ModpackSubCommands>,
     },
-    /// List all the modpacks with their data
-    Modpacks,
+    /// Install a Fabric loader, track a modpack, and download it, all in one step
+    Join {
+        /// The modpack project identifier, or a URL/path to a modpack archive
+        identifier: String,
+        /// The Minecraft instance directory to set up.
+        /// Defaults to the vanilla launcher's `.minecraft` directory.
+        #[clap(long, short)]
+        #[clap(value_hint(ValueHint::DirPath))]
+        minecraft_dir: Option<PathBuf>,
+        /// Don't install a Fabric loader version/profile into the launcher
+        #[clap(long)]
+        no_install_loader: bool,
+    },
     /// Create, configure, delete, switch, or list profiles
     Profile {
         #[clap(subcommand)]
@@ -233,59 +244,36 @@ pub enum ProfileSubCommands {
 
 #[derive(Clone, Debug, Subcommand)]
 pub enum ModpackSubCommands {
-    /// Add a modpack to the config
+    /// Track a modpack as a group of mods in the active profile.
+    ///
+    /// Accepts a Modrinth/CurseForge modpack project identifier (ID or slug), or a URL/local
+    /// path to an `.mrpack` or CurseForge-manifest zip file.
+    /// The mods it provides are added alongside any mods you add yourself with `hopper add`,
+    /// and `hopper upgrade` keeps both up to date without clobbering your own additions.
     Add {
-        /// The identifier of the modpack/project
-        ///
-        /// The Modrinth project ID is specified at the bottom of the left sidebar under 'Technical information'.
-        /// You can also use the project slug for this.
-        /// The Curseforge project ID is specified at the top of the right sidebar under 'About Project'.
+        /// The modpack project identifier, or a URL/path to a modpack archive
         identifier: String,
-        /// The Minecraft instance directory to install the modpack to
+        /// The name to track this modpack group under.
+        /// Defaults to the modpack's title (or filename, for a raw archive).
         #[clap(long, short)]
-        #[clap(value_hint(ValueHint::DirPath))]
-        output_dir: Option<PathBuf>,
-        /// Whether to install the modpack's overrides to the output directory.
-        /// This will override existing files when upgrading.
-        #[clap(long, short)]
-        install_overrides: Option<bool>,
+        name: Option<String>,
+        /// Don't install the modpack's overrides (config files, etc.) into the profile's directory
+        #[clap(long)]
+        no_overrides: bool,
     },
-    /// Configure the current modpack's output directory and installation of overrides.
-    /// Optionally, provide the settings to change as arguments.
-    #[clap(visible_aliases = ["config", "conf"])]
-    Configure {
-        /// The Minecraft instance directory to install the modpack to
-        #[clap(long, short)]
-        #[clap(value_hint(ValueHint::DirPath))]
-        output_dir: Option<PathBuf>,
-        /// Whether to install the modpack's overrides to the output directory.
-        /// This will override existing files when upgrading.
-        #[clap(long, short)]
-        install_overrides: Option<bool>,
-    },
-    /// Delete a modpack.
-    /// Optionally, provide the name of the modpack to delete.
-    #[clap(visible_aliases = ["remove", "rm"])]
-    Delete {
-        /// The name of the modpack to delete
-        modpack_name: Option<String>,
-        /// The name of the profile to switch to afterwards
-        #[clap(long, short)]
-        switch_to: Option<String>,
-    },
-    /// Show information about the current modpack
-    Info,
-    /// List all the modpacks with their data
+    /// List the modpack groups tracked in the active profile
     List,
-    /// Switch between different modpacks.
-    /// Optionally, provide the name of the modpack to switch to.
-    Switch {
-        /// The name of the modpack to switch to
+    /// Stop tracking a modpack group.
+    /// Optionally, provide the name of the modpack group to remove.
+    #[clap(visible_aliases = ["rm", "delete"])]
+    Remove {
+        /// The name of the modpack group to remove
         modpack_name: Option<String>,
+        /// Delete the mods this modpack group added, instead of leaving them tracked as
+        /// freestanding mods
+        #[clap(long)]
+        delete_mods: bool,
     },
-    /// Download and install the latest version of the modpack
-    #[clap(visible_aliases = ["download", "install"])]
-    Upgrade,
 }
 
 #[derive(Clone, Default, Debug, Args)]

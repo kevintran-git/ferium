@@ -27,6 +27,7 @@ reqwest.workspace = true
 furse.workspace = true
 clap.workspace = true
 
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 derive_more = { version = "2.1", features = ["display"] }
 serde = { version = "1.0", features = ["derive"] }
 url = { version = "2.5", features = ["serde"] }

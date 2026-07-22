@@ -50,8 +50,8 @@ pub struct ModpackFile {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ModpackFileEnvironment {
-    client: SideType,
-    server: SideType,
+    pub client: SideType,
+    pub server: SideType,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]

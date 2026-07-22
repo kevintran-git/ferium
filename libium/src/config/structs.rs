@@ -5,8 +5,9 @@ use std::{
     path::{Path, PathBuf},
     str::FromStr,
 };
+use url::Url;
 
-pub const CURRENT_CONFIG_VERSION: u32 = 1;
+pub const CURRENT_CONFIG_VERSION: u32 = 2;
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 pub struct Config {
@@ -20,14 +21,6 @@ pub struct Config {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     #[serde(default)]
     pub profiles: Vec<Profile>,
-
-    #[serde(skip_serializing_if = "is_zero")]
-    #[serde(default)]
-    pub active_modpack: usize,
-
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    #[serde(default)]
-    pub modpacks: Vec<Modpack>,
 }
 
 const fn is_zero(n: &usize) -> bool {
@@ -35,28 +28,113 @@ const fn is_zero(n: &usize) -> bool {
 }
 
 impl Config {
-    pub(crate) fn migrate(&mut self) {
+    /// `raw` is the config file's contents parsed generically, kept around so version < 2
+    /// migration can recover the `modpacks`/`active_modpack` fields this struct no longer has
+    pub(crate) fn migrate(&mut self, raw: &serde_json::Value) {
         if self.version < 1 {
             self.profiles
                 .iter_mut()
                 .for_each(Profile::backwards_compat);
         }
+        if self.version < 2 {
+            if let Some(modpacks) = raw.get("modpacks").and_then(serde_json::Value::as_array) {
+                for modpack in modpacks {
+                    match serde_json::from_value::<LegacyModpack>(modpack.clone()) {
+                        Ok(legacy) => {
+                            eprintln!(
+                                "Migrated modpack '{}' into its own profile; run `hopper upgrade` after switching to it to populate its mods",
+                                legacy.name
+                            );
+                            self.profiles.push(legacy.into());
+                        }
+                        Err(err) => {
+                            eprintln!("WARNING: failed to migrate a legacy modpack entry: {err}");
+                        }
+                    }
+                }
+            }
+        }
         self.version = CURRENT_CONFIG_VERSION;
     }
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct Modpack {
-    pub name: String,
-    pub output_dir: PathBuf,
-    pub install_overrides: bool,
-    pub identifier: ModpackIdentifier,
+#[derive(Deserialize, Debug)]
+struct LegacyModpack {
+    name: String,
+    output_dir: PathBuf,
+    install_overrides: bool,
+    identifier: LegacyModpackIdentifier,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
-pub enum ModpackIdentifier {
+#[derive(Deserialize, Debug)]
+enum LegacyModpackIdentifier {
     CurseForgeModpack(i32),
     ModrinthModpack(String),
+}
+
+impl From<LegacyModpack> for Profile {
+    fn from(legacy: LegacyModpack) -> Self {
+        Self {
+            name: legacy.name.clone(),
+            output_dir: legacy.output_dir,
+            filters: vec![],
+            mods: vec![],
+            shaderpacks: vec![],
+            resourcepacks: vec![],
+            modpacks: vec![ModpackGroup {
+                name: legacy.name,
+                source: match legacy.identifier {
+                    LegacyModpackIdentifier::CurseForgeModpack(id) => {
+                        ModpackSource::CurseForgeHosted(id)
+                    }
+                    LegacyModpackIdentifier::ModrinthModpack(id) => {
+                        ModpackSource::ModrinthHosted(id)
+                    }
+                },
+                last_seen_version: None,
+                install_overrides: legacy.install_overrides,
+                excluded: vec![],
+            }],
+            game_version: None,
+            mod_loader: None,
+        }
+    }
+}
+
+/// A possibly-changing named group of mods tracked within a [`Profile`], sourced from a modpack
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ModpackGroup {
+    pub name: String,
+    pub source: ModpackSource,
+
+    /// Version id (Modrinth/CurseForge project) or content hash (direct file/URL) last applied —
+    /// lets the refresh pass skip work / skip re-applying overrides when the source hasn't
+    /// actually changed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub last_seen_version: Option<String>,
+
+    pub install_overrides: bool,
+
+    /// Mods the source currently provides that the user explicitly removed via `hopper remove` —
+    /// the refresh pass must not re-add these
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
+    pub excluded: Vec<ModIdentifier>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ModpackSource {
+    /// A real Modrinth modpack project — resolved via the Modrinth API, always yields an `.mrpack`
+    ModrinthHosted(String),
+    /// A real CurseForge modpack project — resolved via the CurseForge API, always yields a
+    /// CurseForge-manifest zip
+    CurseForgeHosted(i32),
+    /// A direct `.mrpack`, from anywhere — GitHub releases, a personal server, a Modrinth CDN
+    /// link, a local file, any third-party launcher's export
+    MrpackFile(Url),
+    /// A direct CurseForge-manifest zip that isn't tied to a CurseForge project page
+    CurseForgeZipFile(Url),
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -78,6 +156,10 @@ pub struct Profile {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     #[serde(default)]
     pub resourcepacks: Vec<Mod>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
+    pub modpacks: Vec<ModpackGroup>,
 
     #[serde(skip_serializing)]
     game_version: Option<String>,
@@ -106,6 +188,7 @@ impl Profile {
             mods: vec![],
             shaderpacks: vec![],
             resourcepacks: vec![],
+            modpacks: vec![],
             game_version: None,
             mod_loader: None,
         }
@@ -146,6 +229,7 @@ impl Profile {
             identifier,
             filters,
             override_filters,
+            source_modpack: None,
             check_game_version: None,
             check_mod_loader: None,
         })
@@ -198,6 +282,13 @@ pub struct Mod {
     #[serde(default)]
     pub override_filters: bool,
 
+    /// The name of the [`ModpackGroup`] that added this mod, if any.
+    /// `None` means freestanding — added directly by the user, never touched by group
+    /// reconciliation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub source_modpack: Option<String>,
+
     #[serde(skip_serializing)]
     check_game_version: Option<bool>,
     #[serde(skip_serializing)]
@@ -217,6 +308,7 @@ impl Mod {
             identifier,
             filters,
             override_filters,
+            source_modpack: None,
             check_game_version: None,
             check_mod_loader: None,
         }

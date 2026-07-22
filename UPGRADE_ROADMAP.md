@@ -243,7 +243,49 @@ Full writeup of the comparison lives in Claude's memory
       download. Fixed the same way: write to `config.json.tmp`, then
       `rename` over the real path.
 
-### Phase 6 — Distribution to the other Apple Silicon Mac
+### Phase 6 — Modpacks as profile-scoped groups
+- [x] Removed the old standalone `Modpack`/`ModpackIdentifier` config concept
+      entirely; a modpack is now a `ModpackGroup` (`name`, `source`,
+      `last_seen_version`, `install_overrides`, `excluded`) living on
+      `Profile.modpacks`, sourced from a 4-variant `ModpackSource`
+      (`ModrinthHosted`/`CurseForgeHosted` project, or a raw `MrpackFile`/
+      `CurseForgeZipFile` URL for third-party archives).
+- [x] `Mod.source_modpack: Option<String>` tags which group (if any) added a
+      given mod, so `hopper add`-ed mods and modpack-provided mods coexist in
+      the same list without either clobbering the other.
+- [x] `Config` schema bumped to version 2; `Config::migrate` converts every
+      legacy top-level `modpacks[]`/`active_modpack` entry into its own new
+      profile (`libium/src/config/structs.rs`). Old v0/v1 configs still
+      migrate through the existing `Profile::backwards_compat` path first.
+- [x] `hopper modpack add|list|remove` replaces the old
+      `add/configure/delete/switch/upgrade` set. `remove` defaults to
+      detaching (`source_modpack` cleared, mods kept); `--delete-mods`
+      opts into actually deleting them — named this way instead of the
+      originally-planned `--keep-mods`, since a "keep" flag defaulting to
+      "keep" is a confusing double-negative.
+- [x] `hopper upgrade` runs a group-refresh pass (resolve → diff → add /
+      update / remove / warn-on-conflict → install overrides) for every
+      tracked group before its normal download pass — one pipeline, no
+      separate sync command. Pure reconciliation logic (`diff_entries`) and
+      `.mrpack` file classification are unit-tested without any network
+      access (`libium/src/modpack/group.rs`).
+- [x] Fixed a real bug found while wiring this up: config migrations were
+      resolved entirely in memory but never reached disk, because the
+      pre-existing "skip write if unchanged" check compared the in-memory
+      config against itself post-migration instead of against the
+      pre-migration version. `read_config` now snapshots `version` before
+      calling `migrate` and writes whenever that changed.
+
+### Phase 7 — `hopper join`
+- [x] One command to bring a vanilla `.minecraft` to a joinable state:
+      installs a Fabric loader via Fabric's meta API and upserts
+      `launcher_profiles.json` (`libium/src/loader_install.rs`), then
+      creates or reuses a profile for that instance, tracks the modpack as a
+      group, and runs the upgrade pipeline.
+- [x] `--no-install-loader` skips the loader/launcher-profile step for
+      instances that already have one (e.g. Prism, MultiMC).
+
+### Phase 8 — Distribution to the other Apple Silicon Mac
 - [ ] Decide install method (build `--release` locally + transfer binary,
       vs. `cargo install --git` on the other machine, vs. a GitHub Release
       build via the existing `.github/workflows/release.yml`).
@@ -276,3 +318,13 @@ Full writeup of the comparison lives in Claude's memory
   `.part` temp files (for both mod downloads and `config.json` itself) were
   opened in append mode instead of being truncated, so a leftover file from a
   crashed run could silently corrupt the next write.
+- 2026-07-21: Project renamed to `hopper`.
+- 2026-07-21: Phase 6 done — modpacks are now `ModpackGroup`s tracked per
+  profile instead of a standalone top-level concept; config version bumped
+  to 2 with automatic migration of legacy modpacks into profiles;
+  `hopper modpack add/list/remove` replace the old command set; `hopper
+  upgrade` runs group-refresh before its download pass; fixed a bug where
+  migrations never persisted to disk.
+- 2026-07-21: Phase 7 done — `hopper join` installs a Fabric loader and
+  launcher profile into a vanilla `.minecraft`, then tracks the modpack and
+  upgrades, in one command (`--no-install-loader` to skip the loader step).

@@ -413,16 +413,66 @@ async fn scan_ignores_hidden_files() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn modpack_add_modrinth() {
+    let args = get_args(
+        SubCommands::Modpack {
+            subcommand: Some(ModpackSubCommands::Add {
+                identifier: "1KVo5zza".to_owned(),
+                name: None,
+                no_overrides: false,
+            }),
+        },
+        Some("empty_profile"),
+    );
+    let config_file = args.config_file.clone().unwrap();
+    assert!(matches!(actual_main(args).await, Ok(())));
+
+    let config = read_to_string(config_file).unwrap();
+    assert!(config.contains("ModrinthHosted"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn modpack_add_curseforge() {
+    let args = get_args(
+        SubCommands::Modpack {
+            subcommand: Some(ModpackSubCommands::Add {
+                identifier: "452013".to_owned(),
+                name: None,
+                no_overrides: false,
+            }),
+        },
+        Some("empty_profile"),
+    );
+    let config_file = args.config_file.clone().unwrap();
+    assert!(matches!(actual_main(args).await, Ok(())));
+
+    let config = read_to_string(config_file).unwrap();
+    assert!(config.contains("CurseForgeHosted"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn modpack_add_duplicate_name() {
+    let args = get_args(
+        SubCommands::Modpack {
+            subcommand: Some(ModpackSubCommands::Add {
+                identifier: "1KVo5zza".to_owned(),
+                name: Some("Default Modded".to_owned()),
+                no_overrides: true,
+            }),
+        },
+        Some("empty_profile"),
+    );
+    assert!(matches!(actual_main(args.clone()).await, Ok(())));
+    assert!(matches!(actual_main(args).await, Err(_)));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn modpack_list() {
     assert!(matches!(
         actual_main(get_args(
             SubCommands::Modpack {
-                subcommand: Some(ModpackSubCommands::Add {
-                    identifier: "1KVo5zza".to_owned(),
-                    output_dir: Some(current_dir().unwrap().join("tests").join("mods")),
-                    install_overrides: Some(true),
-                })
+                subcommand: Some(ModpackSubCommands::List)
             },
-            Some("empty")
+            Some("one_profile_with_modpack")
         ))
         .await,
         Ok(()),
@@ -430,21 +480,57 @@ async fn modpack_add_modrinth() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn modpack_add_curseforge() {
-    assert!(matches!(
-        actual_main(get_args(
-            SubCommands::Modpack {
-                subcommand: Some(ModpackSubCommands::Add {
-                    identifier: "452013".to_owned(),
-                    output_dir: Some(current_dir().unwrap().join("tests").join("mods")),
-                    install_overrides: Some(true),
-                })
-            },
-            Some("empty")
-        ))
-        .await,
-        Ok(()),
-    ));
+async fn modpack_remove_detaches_mods_by_default() {
+    let args = get_args(
+        SubCommands::Modpack {
+            subcommand: Some(ModpackSubCommands::Remove {
+                modpack_name: Some("Cobblemon".to_owned()),
+                delete_mods: false,
+            }),
+        },
+        Some("one_profile_with_modpack"),
+    );
+    let config_file = args.config_file.clone().unwrap();
+    assert!(matches!(actual_main(args).await, Ok(())));
+
+    let config = read_to_string(config_file).unwrap();
+    assert!(!config.contains("\"modpacks\""));
+    assert!(config.contains("Sodium"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn modpack_remove_can_delete_mods() {
+    let args = get_args(
+        SubCommands::Modpack {
+            subcommand: Some(ModpackSubCommands::Remove {
+                modpack_name: Some("Cobblemon".to_owned()),
+                delete_mods: true,
+            }),
+        },
+        Some("one_profile_with_modpack"),
+    );
+    let config_file = args.config_file.clone().unwrap();
+    assert!(matches!(actual_main(args).await, Ok(())));
+
+    let config = read_to_string(config_file).unwrap();
+    assert!(!config.contains("Sodium"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn migrate_legacy_modpacks_into_profiles() {
+    let args = get_args(
+        SubCommands::Profile {
+            subcommand: Some(ProfileSubCommands::List),
+        },
+        Some("legacy_modpacks"),
+    );
+    let config_file = args.config_file.clone().unwrap();
+    assert!(matches!(actual_main(args).await, Ok(())));
+
+    let config = read_to_string(config_file).unwrap();
+    assert!(config.contains("CurseForgeHosted"));
+    assert!(config.contains("ModrinthHosted"));
+    assert!(config.contains("\"version\": 2"));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -535,18 +621,6 @@ async fn list_profiles() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn list_modpacks() {
-    assert!(matches!(
-        actual_main(get_args(
-            SubCommands::Modpacks,
-            Some("two_modpacks_mdactive"),
-        ))
-        .await,
-        Ok(()),
-    ));
-}
-
-#[tokio::test(flavor = "multi_thread")]
 async fn upgrade() {
     assert!(matches!(
         actual_main(get_args(SubCommands::Upgrade, Some("one_profile_full"))).await,
@@ -555,27 +629,11 @@ async fn upgrade() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn upgrade_md_modpacks() {
+async fn upgrade_refreshes_modpack_groups() {
     assert!(matches!(
         actual_main(get_args(
-            SubCommands::Modpack {
-                subcommand: Some(ModpackSubCommands::Upgrade)
-            },
-            Some("two_modpacks_mdactive")
-        ))
-        .await,
-        Ok(()),
-    ));
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn upgrade_cf_modpack() {
-    assert!(matches!(
-        actual_main(get_args(
-            SubCommands::Modpack {
-                subcommand: Some(ModpackSubCommands::Upgrade)
-            },
-            Some("two_modpacks_cfactive")
+            SubCommands::Upgrade,
+            Some("one_profile_with_modpack")
         ))
         .await,
         Ok(()),
@@ -598,21 +656,6 @@ async fn profile_switch() {
     ));
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn modpack_switch() {
-    assert!(matches!(
-        actual_main(get_args(
-            SubCommands::Modpack {
-                subcommand: Some(ModpackSubCommands::Switch {
-                    modpack_name: Some("MR Fabulously Optimised".to_owned())
-                })
-            },
-            Some("two_modpacks_cfactive")
-        ))
-        .await,
-        Ok(()),
-    ));
-}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn remove_fail() {
@@ -733,19 +776,3 @@ async fn delete_profile_keeps_output_dir_without_confirmation() {
     remove_dir_all(&output_dir).unwrap();
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn delete_modpack() {
-    assert!(matches!(
-        actual_main(get_args(
-            SubCommands::Modpack {
-                subcommand: Some(ModpackSubCommands::Delete {
-                    modpack_name: Some("MR Fabulously Optimised".to_owned()),
-                    switch_to: None
-                })
-            },
-            Some("two_modpacks_cfactive")
-        ))
-        .await,
-        Ok(()),
-    ));
-}

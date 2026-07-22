@@ -1,6 +1,5 @@
 pub mod check;
 pub mod mod_downloadable;
-pub mod modpack_downloadable;
 
 use crate::{
     config::{
@@ -8,7 +7,6 @@ use crate::{
         structs::{ModIdentifier, ModLoader},
     },
     iter_ext::IterExt as _,
-    modpack::modrinth::structs::ModpackFile as ModpackModFile,
     version_ext::VersionExt,
 };
 use ferinth::structures::version::{
@@ -199,16 +197,6 @@ pub fn from_mr_version(
     ))
 }
 
-pub fn from_modpack_file(file: ModpackModFile) -> Option<DownloadData> {
-    Some(DownloadData {
-        download_url: file.downloads.first()?.clone(),
-        output: file.path,
-        length: file.file_size,
-        dependencies: Vec::new(),
-        conflicts: Vec::new(),
-    })
-}
-
 pub fn from_gh_releases(
     releases: impl IntoIterator<Item = GHRelease>,
 ) -> Vec<(Metadata, DownloadData)> {
@@ -312,34 +300,3 @@ impl DownloadData {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::from_modpack_file;
-    use crate::modpack::modrinth::structs::ModpackFile;
-    use ferinth::structures::version::Hash;
-
-    fn file(downloads: Vec<reqwest::Url>) -> ModpackFile {
-        ModpackFile {
-            path: "mods/test.jar".into(),
-            hashes: Hash {
-                sha1: String::new(),
-                sha512: String::new(),
-                others: Default::default(),
-            },
-            env: None,
-            downloads,
-            file_size: 0,
-        }
-    }
-
-    #[test]
-    fn from_modpack_file_no_downloads() {
-        assert!(from_modpack_file(file(vec![])).is_none());
-    }
-
-    #[test]
-    fn from_modpack_file_with_download() {
-        let url = reqwest::Url::parse("https://example.com/test.jar").unwrap();
-        assert!(from_modpack_file(file(vec![url])).is_some());
-    }
-}

@@ -1,0 +1,30 @@
+{
+    "version": 2,
+    "active_profile": 0,
+    "profiles": [
+        {
+            "name": "Default Modded",
+            "output_dir": "./tests/mods",
+            "filters": [
+                { "ModLoaderPrefer": ["Fabric"] },
+                { "GameVersionStrict": ["1.21.4"] }
+            ],
+            "mods": [
+                {
+                    "name": "Sodium",
+                    "identifier": { "ModrinthProject": "AANobbMI" },
+                    "source_modpack": "Cobblemon"
+                }
+            ],
+            "modpacks": [
+                {
+                    "name": "Cobblemon",
+                    "source": { "ModrinthHosted": "1KVo5zza" },
+                    "last_seen_version": null,
+                    "install_overrides": false,
+                    "excluded": []
+                }
+            ]
+        }
+    ]
+}

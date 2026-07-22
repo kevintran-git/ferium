@@ -84,6 +84,27 @@ pub fn read_overrides(directory: &Path) -> Result<Vec<(OsString, PathBuf)>> {
     Ok(to_install)
 }
 
+/// Copy each `to_install` file/directory into `output_dir`, overwriting existing files
+pub fn install_files(output_dir: &Path, to_install: Vec<(OsString, PathBuf)>) -> Result<()> {
+    for (name, path) in to_install {
+        if path.is_file() {
+            copy(path, output_dir.join(&name))?;
+        } else if path.is_dir() {
+            let mut copy_options = DirCopyOptions::new();
+            copy_options.overwrite = true;
+            copy_dir(path, output_dir, &copy_options)?;
+        } else {
+            bail!("Could not determine whether installable is a file or folder")
+        }
+        println!(
+            "{} Installed          {}",
+            *TICK,
+            name.to_string_lossy().dimmed()
+        );
+    }
+    Ok(())
+}
+
 /// Download and install the files in `to_download` and `to_install` to `output_dir`
 pub async fn download(
     output_dir: PathBuf,
@@ -137,22 +158,7 @@ pub async fn download(
         .map_err(|_| anyhow!("Failed to run threads to completion"))?
         .into_inner()
         .finish_and_clear();
-    for (name, path) in to_install {
-        if path.is_file() {
-            copy(path, output_dir.join(&name))?;
-        } else if path.is_dir() {
-            let mut copy_options = DirCopyOptions::new();
-            copy_options.overwrite = true;
-            copy_dir(path, &output_dir, &copy_options)?;
-        } else {
-            bail!("Could not determine whether installable is a file or folder")
-        }
-        println!(
-            "{} Installed          {}",
-            *TICK,
-            name.to_string_lossy().dimmed()
-        );
-    }
+    install_files(&output_dir, to_install)?;
 
     let deduped = dedupe_by_manifest_id(&output_dir)?;
     if !deduped.is_empty() {

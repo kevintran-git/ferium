@@ -1,5 +1,5 @@
 use crate::{
-    config::structs::{Config, ModpackIdentifier},
+    config::structs::{ModpackGroup, ModpackSource},
     CURSEFORGE_API, MODRINTH_API,
 };
 use ferinth::structures::project::{Project, ProjectType};
@@ -52,17 +52,15 @@ impl From<ferinth::Error> for Error {
 /// Check if the project of `project_id` exists and is a modpack
 ///
 /// Returns the project struct
-pub async fn curseforge(config: &Config, project_id: i32) -> Result<Mod> {
+pub async fn curseforge(existing_groups: &[ModpackGroup], project_id: i32) -> Result<Mod> {
     let project = CURSEFORGE_API.get_mod(project_id).await?;
 
-    // Check if project has already been added
-    if config.modpacks.iter().any(|modpack| {
+    if existing_groups.iter().any(|modpack| {
         modpack.name == project.name
-            || ModpackIdentifier::CurseForgeModpack(project.id) == modpack.identifier
+            || matches!(&modpack.source, ModpackSource::CurseForgeHosted(id) if *id == project.id)
     }) {
         Err(Error::AlreadyAdded)
 
-    // Check if the project is a modpack
     } else if !project.links.website_url.as_str().contains("modpacks") {
         Err(Error::NotAModpack)
     } else {
@@ -73,20 +71,18 @@ pub async fn curseforge(config: &Config, project_id: i32) -> Result<Mod> {
 /// Check if the project of `project_id` exists and is a modpack
 ///
 /// Returns the project struct
-pub async fn modrinth(config: &Config, project_id: &str) -> Result<Project> {
+pub async fn modrinth(existing_groups: &[ModpackGroup], project_id: &str) -> Result<Project> {
     let project = MODRINTH_API.project_get(project_id).await?;
 
-    // Check if project has already been added
-    if config.modpacks.iter().any(|modpack| {
+    if existing_groups.iter().any(|modpack| {
         modpack.name == project.title
             || matches!(
-                &modpack.identifier,
-                ModpackIdentifier::ModrinthModpack(proj_id) if proj_id == &project.id
+                &modpack.source,
+                ModpackSource::ModrinthHosted(proj_id) if proj_id == &project.id
             )
     }) {
         Err(Error::AlreadyAdded)
 
-    // Check if the project is modpack
     } else if project.project_type != ProjectType::Modpack {
         Err(Error::NotAModpack)
     } else {
