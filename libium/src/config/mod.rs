@@ -1,7 +1,7 @@
 pub mod filters;
 pub mod structs;
 use std::{
-    fs::{create_dir_all, File},
+    fs::{create_dir_all, rename, File},
     io::{BufReader, Result},
     path::Path,
 };
@@ -27,7 +27,13 @@ pub fn read_config(path: impl AsRef<Path>) -> Result<structs::Config> {
 
 /// Serialise `config` and write it to the config file at `path`
 pub fn write_config(path: impl AsRef<Path>, config: &structs::Config) -> Result<()> {
-    let config_file = File::create(path)?;
+    let path = path.as_ref();
+    let mut temp_path = path.as_os_str().to_owned();
+    temp_path.push(".tmp");
+    let temp_path = Path::new(&temp_path);
+
+    let config_file = File::create(temp_path)?;
     serde_json::to_writer_pretty(config_file, config)?;
+    rename(temp_path, path)?;
     Ok(())
 }

@@ -128,7 +128,19 @@ pub async fn upgrade(modpack: &'_ Modpack) -> Result<()> {
             )?;
 
             for file in metadata.files {
-                to_download.push(from_modpack_file(file));
+                let path = file.path.clone();
+                match from_modpack_file(file) {
+                    Some(downloadable) => to_download.push(downloadable),
+                    None => println!(
+                        "{}",
+                        format!(
+                            "WARNING: {} has no download URLs available, skipping",
+                            path.display()
+                        )
+                        .yellow()
+                        .bold()
+                    ),
+                }
             }
 
             install_msg = format!(
@@ -162,7 +174,6 @@ pub async fn upgrade(modpack: &'_ Modpack) -> Result<()> {
         &mut Vec::new(),
     )
     .await?;
-    // TODO: Check for `to_install` files that are already installed
     if to_download.is_empty() && to_install.is_empty() {
         println!("\n{}", "All up to date!".bold());
     } else {

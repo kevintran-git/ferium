@@ -191,13 +191,57 @@ Full writeup of the comparison lives in Claude's memory
       `add_game_version_range_unknown_bound`.
 
 ### Phase 5 — Safety fixes modmgr got wrong
-- [ ] Fault-tolerant modpack import: skip-and-warn on a single bad file
-      instead of aborting the whole import (bug #14).
-- [ ] `ferium scan` ignores dotfiles/backup dirs like `.old/` (bug #10).
-- [ ] Confirmed cleanup of a profile's output dir on `profile delete`,
-      instead of silently orphaning files (bug #11).
-- [ ] Audit download atomicity (tmp file + rename) everywhere ferium writes
-      downloaded files, to confirm bug #9 isn't actually present upstream.
+- [x] Fault-tolerant modpack import (bug #14): `from_modpack_file` used
+      `file.downloads.first().expect(...)`, so a single Modrinth modpack file
+      with no download URLs would panic and abort the entire `modpack
+      upgrade`, instead of just that one file being unavailable. Now returns
+      `Option<DownloadData>`; the caller in
+      `src/subcommands/modpack/upgrade.rs` skips the file with a warning
+      instead. The CurseForge side (`try_from_cf_file` and its caller) was
+      already fault-tolerant per-file, so this only affected Modrinth
+      modpacks. Covered by `tests::from_modpack_file_no_downloads`/
+      `from_modpack_file_with_download` in `libium`.
+- [x] `ferium scan` ignores dotfiles (bug #10): a hidden file directly in the
+      scanned directory (e.g. a dot-prefixed manual backup that still ends in
+      `.jar`) was picked up and could be added to the profile as if it were a
+      real mod, since `scan()` only checked for a `.jar` extension. Now
+      entries whose filename starts with `.` are skipped before the
+      extension check. Directories (including `.old`, which `download.rs`'s
+      `clean()` creates for removed files) were already excluded since `scan`
+      only reads files at the top level, not recursively. Found and fixed a
+      second, related bug this surfaced: `scan()` unconditionally called
+      CurseForge's fingerprint-matching endpoint even with an empty hash
+      list, which CurseForge rejects with 400 Bad Request — a directory
+      containing only ignorable files (or no jars at all) would error out
+      instead of returning no matches. Fixed with an early return when there
+      are no hashes to look up. Covered by `tests::scan_ignores_hidden_files`.
+- [x] Confirmed cleanup of a profile's output dir on `profile delete` (bug
+      #11): previously the profile entry was removed from `config.profiles`
+      but its `output_dir` and everything downloaded into it were left on
+      disk, orphaned, with no way to know they used to belong to a profile.
+      `profile delete` now asks "Also delete the output directory `<path>`?"
+      (default no) when the directory exists, and removes it recursively
+      only on explicit confirmation. Covered by
+      `tests::delete_profile_keeps_output_dir_without_confirmation`, and
+      verified live that a non-empty directory survives an unconfirmed
+      delete.
+- [x] Audited download atomicity (bug #9): `DownloadData::download` already
+      wrote to a `.part` temp file and `rename`d it into place, which is
+      atomic for the final swap — but the temp file was opened with
+      `.append(true)`, not truncated. Since every download re-fetches the
+      whole file from scratch (no HTTP range/resume support), a `.part` file
+      left over from a previous crashed or interrupted download would get
+      new bytes appended after the stale ones, silently corrupting the final
+      renamed file instead of being an atomicity failure at the rename step.
+      Fixed by opening with `.truncate(true)` instead. Verified live by
+      seeding a `.part` file with 500KB of garbage before an upgrade and
+      confirming the final file came out byte-exact. While auditing, found
+      the same pattern in `write_config` (`libium/src/config/mod.rs`): it
+      wrote JSON directly into the live `config.json` with `File::create`,
+      so a crash or serialization error partway through could truncate the
+      user's entire config (all profiles and tracked mods), not just one
+      download. Fixed the same way: write to `config.json.tmp`, then
+      `rename` over the real path.
 
 ### Phase 6 — Distribution to the other Apple Silicon Mac
 - [ ] Decide install method (build `--release` locally + transfer binary,
@@ -225,3 +269,10 @@ Full writeup of the comparison lives in Claude's memory
   tracks required dependencies (it never did before; `upgrade` already
   handled this correctly), and a new `Filter::GameVersionRange` extends the
   filter system with `--game-version-range FROM..TO` matching.
+- 2026-07-21: Phase 5 done — fault-tolerant Modrinth modpack file import
+  (skip-and-warn instead of panicking), `scan` ignores dotfiles and no longer
+  400s on an all-hidden/empty directory, confirmed output-dir cleanup on
+  `profile delete`, and an atomicity audit that found and fixed a real bug:
+  `.part` temp files (for both mod downloads and `config.json` itself) were
+  opened in append mode instead of being truncated, so a leftover file from a
+  crashed run could silently corrupt the next write.

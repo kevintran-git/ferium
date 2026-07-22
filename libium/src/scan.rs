@@ -27,7 +27,11 @@ pub async fn scan(
 
     for entry in read_dir(dir_path)? {
         let path = entry?.path();
-        if path.is_file()
+        let is_hidden = path
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().starts_with('.'));
+        if !is_hidden
+            && path.is_file()
             && path
                 .extension()
                 .is_some_and(|ext| ext.eq_ignore_ascii_case("jar"))
@@ -38,7 +42,6 @@ pub async fn scan(
             let cf_hash = furse::cf_fingerprint(&bytes);
 
             if let Some(filename) = path.file_name() {
-                // Only add the hashes if this file wasn't already hashed
                 if filenames.insert(cf_hash, filename.to_owned()).is_none() {
                     mr_hashes.push(mr_hash);
                     cf_hashes.push(cf_hash);
@@ -49,6 +52,10 @@ pub async fn scan(
 
     hashing_complete();
 
+    if mr_hashes.is_empty() {
+        return Ok(vec![]);
+    }
+
     let (mr_results, cf_results) = try_join!(
         MODRINTH_API
             .version_get_from_multiple_hashes(mr_hashes.clone())
@@ -58,7 +65,6 @@ pub async fn scan(
             .map_err(Error::from),
     )?;
 
-    // Elide explicit type parameters when https://github.com/rust-lang/rust/issues/90879 is resolved.
     let mut mr_results =
         HashMap::<_, _>::from_iter(mr_results.into_iter().map(|(k, v)| (k, v.project_id)));
     let mut cf_results = HashMap::<_, _>::from_iter(

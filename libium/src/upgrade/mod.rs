@@ -199,18 +199,14 @@ pub fn from_mr_version(
     ))
 }
 
-pub fn from_modpack_file(file: ModpackModFile) -> DownloadData {
-    DownloadData {
-        download_url: file
-            .downloads
-            .first()
-            .expect("Download URLs not provided")
-            .clone(),
+pub fn from_modpack_file(file: ModpackModFile) -> Option<DownloadData> {
+    Some(DownloadData {
+        download_url: file.downloads.first()?.clone(),
         output: file.path,
         length: file.file_size,
         dependencies: Vec::new(),
         conflicts: Vec::new(),
-    }
+    })
 }
 
 pub fn from_gh_releases(
@@ -289,7 +285,8 @@ impl DownloadData {
         let mut temp_file = BufWriter::with_capacity(
             size,
             OpenOptions::new()
-                .append(true)
+                .write(true)
+                .truncate(true)
                 .create(true)
                 .open(&temp_file_path)?,
         );
@@ -312,5 +309,37 @@ impl DownloadData {
             .unwrap_or_default()
             .to_string_lossy()
             .to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::from_modpack_file;
+    use crate::modpack::modrinth::structs::ModpackFile;
+    use ferinth::structures::version::Hash;
+
+    fn file(downloads: Vec<reqwest::Url>) -> ModpackFile {
+        ModpackFile {
+            path: "mods/test.jar".into(),
+            hashes: Hash {
+                sha1: String::new(),
+                sha512: String::new(),
+                others: Default::default(),
+            },
+            env: None,
+            downloads,
+            file_size: 0,
+        }
+    }
+
+    #[test]
+    fn from_modpack_file_no_downloads() {
+        assert!(from_modpack_file(file(vec![])).is_none());
+    }
+
+    #[test]
+    fn from_modpack_file_with_download() {
+        let url = reqwest::Url::parse("https://example.com/test.jar").unwrap();
+        assert!(from_modpack_file(file(vec![url])).is_some());
     }
 }

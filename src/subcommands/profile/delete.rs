@@ -1,19 +1,18 @@
 use super::switch;
 use anyhow::{Context as _, Result};
 use colored::Colorize as _;
-use inquire::Select;
+use inquire::{Confirm, Select};
 use libium::{
     config::{filters::ProfileParameters as _, structs::Config},
     iter_ext::IterExt as _,
 };
-use std::cmp::Ordering;
+use std::{cmp::Ordering, fs::remove_dir_all};
 
 pub fn delete(
     config: &mut Config,
     profile_name: Option<String>,
     switch_to: Option<String>,
 ) -> Result<()> {
-    // If the profile name has been provided as an option
     let selection = if let Some(profile_name) = profile_name {
         config
             .profiles
@@ -54,22 +53,30 @@ pub fn delete(
             return Ok(());
         }
     };
-    config.profiles.remove(selection);
+    let removed_profile = config.profiles.remove(selection);
+
+    if removed_profile.output_dir.is_dir()
+        && Confirm::new(&format!(
+            "Also delete the output directory `{}`?",
+            removed_profile.output_dir.display()
+        ))
+        .with_default(false)
+        .prompt()
+        .unwrap_or_default()
+    {
+        remove_dir_all(&removed_profile.output_dir)?;
+        println!("{}", "Output directory deleted".yellow());
+    }
 
     match config.active_profile.cmp(&selection) {
-        // If the currently selected profile is being removed
         Ordering::Equal => {
-            // And there is more than one profile
             if config.profiles.len() > 1 {
-                // Let the user pick which profile to switch to
                 switch(config, switch_to)?;
             } else {
                 config.active_profile = 0;
             }
         }
-        // If the active profile comes after the removed profile
         Ordering::Greater => {
-            // Decrement the index by one
             config.active_profile -= 1;
         }
         Ordering::Less => (),

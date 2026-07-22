@@ -10,7 +10,7 @@ use crate::{
 use libium::config::structs::ModLoader;
 use std::{
     env::current_dir,
-    fs::{copy, create_dir_all, read_to_string},
+    fs::{copy, create_dir_all, read_to_string, remove_dir_all, write},
     path::PathBuf,
 };
 
@@ -395,6 +395,23 @@ async fn scan() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn scan_ignores_hidden_files() {
+    let args = get_args(
+        SubCommands::Scan {
+            platform: Platform::default(),
+            directory: Some(current_dir().unwrap().join("tests").join("test_mods_hidden")),
+            force: false,
+        },
+        Some("empty_profile"),
+    );
+    let config_file = args.config_file.clone().unwrap();
+    assert!(matches!(actual_main(args).await, Ok(())));
+
+    let config = read_to_string(config_file).unwrap();
+    assert!(config.contains("\"mods\": []"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn modpack_add_modrinth() {
     assert!(matches!(
         actual_main(get_args(
@@ -687,6 +704,33 @@ async fn delete_profile() {
         .await,
         Ok(()),
     ));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn delete_profile_keeps_output_dir_without_confirmation() {
+    let output_dir = current_dir()
+        .unwrap()
+        .join("tests")
+        .join("profile_delete_output");
+    create_dir_all(&output_dir).unwrap();
+    write(output_dir.join("marker.txt"), b"keep me").unwrap();
+
+    assert!(matches!(
+        actual_main(get_args(
+            SubCommands::Profile {
+                subcommand: Some(ProfileSubCommands::Delete {
+                    profile_name: Some("Solo Profile".to_owned()),
+                    switch_to: None
+                })
+            },
+            Some("profile_with_own_dir"),
+        ))
+        .await,
+        Ok(()),
+    ));
+
+    assert!(output_dir.join("marker.txt").exists());
+    remove_dir_all(&output_dir).unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
