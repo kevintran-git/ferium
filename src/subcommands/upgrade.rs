@@ -11,7 +11,7 @@ use libium::{
         filters::{Filter, ProfileParameters as _},
         structs::{Mod, ModIdentifier, ModLoader, Profile, ProjectKind},
     },
-    upgrade::{mod_downloadable, DownloadData},
+    upgrade::{manifest_resolve, mod_downloadable, DownloadData},
 };
 use parking_lot::Mutex;
 use std::{
@@ -53,7 +53,7 @@ fn is_rate_limited_or_unauthorised(err: &mod_downloadable::Error) -> bool {
 pub async fn get_platform_downloadables(
     mods: &[Mod],
     filters: &[Filter],
-) -> Result<(Vec<DownloadData>, bool)> {
+) -> Result<(Vec<(ModIdentifier, DownloadData)>, bool)> {
     let progress_bar = Arc::new(Mutex::new(ProgressBar::new(0).with_style(STYLE_NO.clone())));
     let mut tasks = JoinSet::new();
     let mut done_mods = Vec::new();
@@ -129,6 +129,7 @@ pub async fn get_platform_downloadables(
                             mod_.name,
                             download_file.filename().dimmed()
                         ));
+                        let identifier = mod_.identifier.clone();
                         for dep in take(&mut download_file.dependencies) {
                             dep_sender.send(Mod::new(
                                 format!(
@@ -149,7 +150,7 @@ pub async fn get_platform_downloadables(
                                 false,
                             ))?;
                         }
-                        Ok(Some(download_file))
+                        Ok(Some((identifier, download_file)))
                     }
                     Err(err) => {
                         if is_rate_limited_or_unauthorised(&err) {
@@ -208,7 +209,19 @@ pub async fn get_platform_downloadables(
 }
 
 pub async fn upgrade(profile: &Profile) -> Result<()> {
-    let (to_download, error) = get_platform_downloadables(&profile.mods, &profile.filters).await?;
+    let (mut to_download, error) =
+        get_platform_downloadables(&profile.mods, &profile.filters).await?;
+
+    if profile.strict_deps {
+        println!("\n{}", "Checking Cross-Mod Dependency Requirements".bold());
+        let notes = manifest_resolve::apply_strict_deps(&mut to_download, &profile.filters).await;
+        for note in notes {
+            println!("{}", note.yellow());
+        }
+    }
+
+    let to_download = to_download.into_iter().map(|(_, dl)| dl).collect();
+
     let mut to_install = Vec::new();
     if profile.output_dir.join("user").exists()
         && profile.filters.mod_loader() != Some(&ModLoader::Quilt)
@@ -232,6 +245,7 @@ pub async fn upgrade(profile: &Profile) -> Result<()> {
 pub async fn upgrade_packs(profile: &Profile, kind: ProjectKind) -> Result<()> {
     let filters = kind.applicable_filters(profile.filters.clone());
     let (to_download, error) = get_platform_downloadables(profile.mods(kind), &filters).await?;
+    let to_download = to_download.into_iter().map(|(_, dl)| dl).collect();
     finish_upgrade(&profile.dir(kind), to_download, Vec::new(), error).await
 }
 

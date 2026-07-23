@@ -1,7 +1,7 @@
 use super::{check_output_directory, pick_minecraft_versions, pick_mod_loader};
 use crate::file_picker::pick_folder;
 use anyhow::{Context as _, Result};
-use inquire::{Select, Text};
+use inquire::{Confirm, Select, Text};
 use libium::{
     config::filters::ProfileParameters as _,
     config::structs::{ModLoader, Profile},
@@ -14,6 +14,7 @@ pub async fn configure(
     mod_loaders: Vec<ModLoader>,
     name: Option<String>,
     output_dir: Option<PathBuf>,
+    strict_deps: Option<bool>,
 ) -> Result<()> {
     let mut interactive = true;
 
@@ -41,18 +42,18 @@ pub async fn configure(
         profile.output_dir = output_dir;
         interactive = false;
     }
+    if let Some(strict_deps) = strict_deps {
+        profile.strict_deps = strict_deps;
+        interactive = false;
+    }
 
     if interactive {
         let items = vec![
-            // Show a file dialog
             "Mods output directory",
-            // Show a picker of Minecraft versions to select from
             "Minecraft version",
-            // Show a picker to change mod loader
             "Mod loader",
-            // Show a dialog to change name
             "Profile Name",
-            // Quit the configuration
+            "Strict dependency resolution",
             "Quit",
         ];
 
@@ -103,7 +104,15 @@ pub async fn configure(
                         continue;
                     }
                 }
-                4 => break,
+                4 => {
+                    if let Ok(enabled) = Confirm::new("Enable strict dependency resolution?")
+                        .with_default(profile.strict_deps)
+                        .prompt()
+                    {
+                        profile.strict_deps = enabled;
+                    }
+                }
+                5 => break,
                 _ => unreachable!(),
             }
             println!();

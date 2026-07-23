@@ -95,6 +95,7 @@ impl From<LegacyModpack> for Profile {
                 install_overrides: legacy.install_overrides,
                 excluded: vec![],
             }],
+            strict_deps: false,
             game_version: None,
             mod_loader: None,
         }
@@ -161,6 +162,9 @@ pub struct Profile {
     #[serde(default)]
     pub modpacks: Vec<ModpackGroup>,
 
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub strict_deps: bool,
+
     #[serde(skip_serializing)]
     game_version: Option<String>,
     #[serde(skip_serializing)]
@@ -189,6 +193,7 @@ impl Profile {
             shaderpacks: vec![],
             resourcepacks: vec![],
             modpacks: vec![],
+            strict_deps: false,
             game_version: None,
             mod_loader: None,
         }

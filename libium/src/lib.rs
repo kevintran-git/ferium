@@ -8,6 +8,7 @@ pub mod pin;
 pub mod scan;
 pub mod upgrade;
 pub mod version_ext;
+pub mod version_range;
 
 pub use add::add;
 pub use scan::scan;

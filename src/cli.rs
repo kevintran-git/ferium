@@ -211,6 +211,11 @@ pub enum ProfileSubCommands {
         #[clap(long, short)]
         #[clap(value_hint(ValueHint::DirPath))]
         output_dir: Option<PathBuf>,
+        /// Also check each mod's own dependency manifest during `upgrade`, and prefer versions
+        /// that satisfy other installed mods' declared requirements. Slower, since it downloads
+        /// extra candidate versions to inspect.
+        #[clap(long)]
+        strict_deps: Option<bool>,
     },
     /// Create a new profile.
     /// Optionally, provide the settings as arguments.

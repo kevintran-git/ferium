@@ -1,4 +1,5 @@
 pub mod check;
+pub mod manifest_resolve;
 pub mod mod_downloadable;
 
 use crate::{

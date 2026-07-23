@@ -7,7 +7,7 @@ use libium::{
 pub fn info(profile: &Profile, active: bool) {
     println!(
         "{}{}
-        \r  Output directory:   {}{}{}
+        \r  Output directory:   {}{}{}{}
         \r  Mods:               {}\n",
         if active {
             profile.name.bold().italic()
@@ -32,6 +32,11 @@ pub fn info(profile: &Profile, active: bool) {
             .mod_loader()
             .map(|l| format!("\n  Mod Loader:         {}", l.to_string().purple()))
             .unwrap_or_default(),
+        if profile.strict_deps {
+            format!("\n  Strict deps:        {}", "on".cyan())
+        } else {
+            String::new()
+        },
         profile.mods.len().to_string().yellow(),
     );
 }

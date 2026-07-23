@@ -152,6 +152,15 @@ pub async fn select_latest(
     download_files: impl Iterator<Item = &Metadata> + Clone,
     filters: Vec<Filter>,
 ) -> Result<usize> {
+    Ok(select_ordered(download_files, filters).await?[0])
+}
+
+/// Like [`select_latest`], but returns every index that passes every filter, ordered from most
+/// to least preferred, instead of just the single most preferred one.
+pub async fn select_ordered(
+    download_files: impl Iterator<Item = &Metadata> + Clone,
+    filters: Vec<Filter>,
+) -> Result<Vec<usize>> {
     let mut filter_results = vec![];
     let mut run_last = vec![];
 
@@ -195,8 +204,8 @@ pub async fn select_latest(
         })
         .unwrap_or_default();
 
-    let final_index = if run_last.is_empty() {
-        final_indices.into_iter().min().ok_or(Error::IntersectFailure)?
+    let mut ordered = if run_last.is_empty() {
+        final_indices.into_iter().collect_vec()
     } else {
         let download_files = download_files.into_iter().enumerate().filter_map(|(i, f)| {
             if final_indices.contains(&i) {
@@ -214,16 +223,20 @@ pub async fn select_latest(
 
         filter_results
             .next()
-            .and_then(|set_1| {
+            .map(|set_1| {
                 filter_results
                     .fold(set_1, |set_a, set_b| {
                         set_a.intersection(&set_b).copied().collect_hashset()
                     })
                     .into_iter()
-                    .min()
+                    .collect_vec()
             })
-            .ok_or(Error::IntersectFailure)?
+            .unwrap_or_default()
     };
 
-    Ok(final_index)
+    if ordered.is_empty() {
+        return Err(Error::IntersectFailure);
+    }
+    ordered.sort_unstable();
+    Ok(ordered)
 }

@@ -325,6 +325,7 @@ async fn actual_main(mut cli_app: Hopper) -> Result<()> {
                     mod_loaders,
                     name,
                     output_dir,
+                    strict_deps,
                 } => {
                     subcommands::profile::configure(
                         get_active_profile(&mut config)?,
@@ -332,6 +333,7 @@ async fn actual_main(mut cli_app: Hopper) -> Result<()> {
                         mod_loaders,
                         name,
                         output_dir,
+                        strict_deps,
                     )
                     .await?;
                 }

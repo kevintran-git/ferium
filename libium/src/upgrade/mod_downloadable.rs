@@ -1,6 +1,6 @@
 use super::{
     from_gh_asset, from_gh_releases, from_mr_version, try_from_cf_file, DistributionDeniedError,
-    DownloadData,
+    DownloadData, Metadata,
 };
 use crate::{
     config::{
@@ -78,30 +78,7 @@ impl Mod {
                 }
             }
             id => {
-                let download_files = match &id {
-                    ModIdentifier::CurseForgeProject(id, None) => {
-                        let mut files = CURSEFORGE_API.get_mod_files(*id).await?;
-                        files.sort_unstable_by_key(|f| Reverse(f.file_date));
-                        files
-                            .into_iter()
-                            .map(|f| try_from_cf_file(f).map_err(Into::into))
-                            .collect::<Result<Vec<_>>>()?
-                    }
-                    ModIdentifier::ModrinthProject(id, None) => MODRINTH_API
-                        .version_list(id)
-                        .await?
-                        .into_iter()
-                        .filter_map(|v| from_mr_version(v).ok())
-                        .collect_vec(),
-                    ModIdentifier::GitHubRepository((owner, repo), None) => GITHUB_API
-                        .repos(owner, repo)
-                        .releases()
-                        .list()
-                        .send()
-                        .await
-                        .map(|r| from_gh_releases(r.items))?,
-                    _ => unreachable!(),
-                };
+                let download_files = gather_candidates(id).await?;
 
                 let index = super::check::select_latest(
                     download_files.iter().map(|(m, _)| m),
@@ -116,4 +93,50 @@ impl Mod {
             }
         }
     }
+}
+
+async fn gather_candidates(identifier: &ModIdentifier) -> Result<Vec<(Metadata, DownloadData)>> {
+    Ok(match identifier {
+        ModIdentifier::CurseForgeProject(id, None) => {
+            let mut files = CURSEFORGE_API.get_mod_files(*id).await?;
+            files.sort_unstable_by_key(|f| Reverse(f.file_date));
+            files
+                .into_iter()
+                .map(|f| try_from_cf_file(f).map_err(Into::into))
+                .collect::<Result<Vec<_>>>()?
+        }
+        ModIdentifier::ModrinthProject(id, None) => MODRINTH_API
+            .version_list(id)
+            .await?
+            .into_iter()
+            .filter_map(|v| from_mr_version(v).ok())
+            .collect_vec(),
+        ModIdentifier::GitHubRepository((owner, repo), None) => GITHUB_API
+            .repos(owner, repo)
+            .releases()
+            .list()
+            .send()
+            .await
+            .map(|r| from_gh_releases(r.items))?,
+        _ => unreachable!(),
+    })
+}
+
+/// Returns every version of an unpinned mod that passes `filters`, ordered from most to least
+/// preferred. Returns an empty list for a pinned mod, since its version is already fixed.
+pub async fn fetch_ordered_candidates(
+    identifier: &ModIdentifier,
+    filters: Vec<Filter>,
+) -> Result<Vec<DownloadData>> {
+    if identifier.pin().is_some() {
+        return Ok(vec![]);
+    }
+
+    let download_files = gather_candidates(identifier).await?;
+    let ordered =
+        super::check::select_ordered(download_files.iter().map(|(m, _)| m), filters).await?;
+    Ok(ordered
+        .into_iter()
+        .map(|i| download_files[i].1.clone())
+        .collect())
 }
