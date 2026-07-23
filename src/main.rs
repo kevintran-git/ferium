@@ -389,6 +389,16 @@ async fn actual_main(mut cli_app: Hopper) -> Result<()> {
             check_empty(&profile.mods, "mods")?;
             subcommands::remove(profile, ProjectKind::Mod, mod_names, "mod")?;
         }
+        SubCommands::Pin { mod_name, version } => {
+            let profile = get_active_profile(&mut config)?;
+            check_empty(&profile.mods, "mods")?;
+            subcommands::pin(profile, ProjectKind::Mod, mod_name, version, "mod").await?;
+        }
+        SubCommands::Unpin { mod_names } => {
+            let profile = get_active_profile(&mut config)?;
+            check_empty(&profile.mods, "mods")?;
+            subcommands::unpin(profile, ProjectKind::Mod, mod_names, "mod")?;
+        }
         SubCommands::Upgrade => {
             let profile = get_active_profile(&mut config)?;
             for i in 0..profile.modpacks.len() {

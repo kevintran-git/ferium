@@ -452,6 +452,35 @@ impl ModIdentifier {
             _ => false,
         }
     }
+
+    /// Returns the same project, pinned to `pin`
+    #[must_use]
+    pub fn with_pin(self, pin: String) -> Self {
+        match self {
+            Self::CurseForgeProject(p, _) => Self::CurseForgeProject(p, Some(pin)),
+            Self::ModrinthProject(p, _) => Self::ModrinthProject(p, Some(pin)),
+            Self::GitHubRepository(p, _) => Self::GitHubRepository(p, Some(pin)),
+        }
+    }
+
+    /// Returns the same project, with any pin removed
+    #[must_use]
+    pub fn without_pin(self) -> Self {
+        match self {
+            Self::CurseForgeProject(p, _) => Self::CurseForgeProject(p, None),
+            Self::ModrinthProject(p, _) => Self::ModrinthProject(p, None),
+            Self::GitHubRepository(p, _) => Self::GitHubRepository(p, None),
+        }
+    }
+
+    /// Returns the pin, if this project is pinned to one
+    pub const fn pin(&self) -> Option<&String> {
+        match self {
+            Self::CurseForgeProject(_, pin)
+            | Self::ModrinthProject(_, pin)
+            | Self::GitHubRepository(_, pin) => pin.as_ref(),
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize, Debug, Display, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]

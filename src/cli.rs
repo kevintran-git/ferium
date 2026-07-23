@@ -123,6 +123,23 @@ pub enum SubCommands {
         /// List of project IDs or case-insensitive names of mods to remove
         mod_names: Vec<String>,
     },
+    /// Pin a mod to a specific version, so `hopper upgrade` stops changing it.
+    /// Without a version, choose interactively from the mod's available versions.
+    Pin {
+        /// The project ID or case-insensitive name of the mod to pin.
+        /// If omitted, choose interactively from your mods.
+        mod_name: Option<String>,
+        /// The version to pin to.
+        /// If omitted, choose interactively from the mod's available versions.
+        version: Option<String>,
+    },
+    /// Remove a mod's pin, so `hopper upgrade` installs its latest compatible version again.
+    /// Optionally, provide a list of names or IDs of the mods to unpin.
+    Unpin {
+        /// List of project IDs or case-insensitive names of mods to unpin.
+        /// If none are given, choose interactively from your pinned mods.
+        mod_names: Vec<String>,
+    },
     /// Download and install the latest compatible version of your mods
     #[clap(visible_aliases = ["download", "install"])]
     Upgrade,

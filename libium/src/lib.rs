@@ -4,6 +4,7 @@ pub mod iter_ext;
 pub mod loader_install;
 pub mod manifest;
 pub mod modpack;
+pub mod pin;
 pub mod scan;
 pub mod upgrade;
 pub mod version_ext;
