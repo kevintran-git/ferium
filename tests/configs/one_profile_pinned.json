@@ -1,0 +1,24 @@
+{
+    "active_profile": 0,
+    "active_modpack": 0,
+    "profiles": [
+        {
+            "name": "Default Modded",
+            "output_dir": "./tests/mods",
+            "game_version": "1.18.2",
+            "mod_loader": "Fabric",
+            "mods": [
+                {
+                    "name": "Starlight (Fabric)",
+                    "identifier": {
+                        "PinnedModrinthProject": [
+                            "H8CaAYZC",
+                            "HZYU0kdg"
+                        ]
+                    }
+                }
+            ]
+        }
+    ],
+    "modpacks": []
+}

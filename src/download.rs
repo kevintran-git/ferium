@@ -9,6 +9,7 @@ use indicatif::ProgressBar;
 use libium::{iter_ext::IterExt as _, manifest::dedupe_by_manifest_id, upgrade::DownloadData};
 use parking_lot::Mutex;
 use std::{
+    collections::HashSet,
     ffi::OsString,
     fs::{copy, create_dir_all, read_dir, remove_file},
     path::{Path, PathBuf},
@@ -126,6 +127,9 @@ pub async fn download(
     let mut tasks = JoinSet::new();
     let client = reqwest::Client::new();
 
+    let resolved_filenames: HashSet<String> =
+        to_download.iter().map(DownloadData::filename).collect();
+
     for downloadable in to_download {
         let progress_bar = Arc::clone(&progress_bar);
         let client = client.clone();
@@ -160,7 +164,7 @@ pub async fn download(
         .finish_and_clear();
     install_files(&output_dir, to_install)?;
 
-    let deduped = dedupe_by_manifest_id(&output_dir)?;
+    let deduped = dedupe_by_manifest_id(&output_dir, &resolved_filenames)?;
     if !deduped.is_empty() {
         println!(
             "{}",

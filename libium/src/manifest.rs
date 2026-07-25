@@ -1,7 +1,7 @@
 use crate::version_range::Requirement;
 use regex::Regex;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs::{self, File},
     io::{Read, Seek},
     path::{Path, PathBuf},
@@ -131,10 +131,13 @@ pub fn mod_manifest_id(jar_path: &Path) -> Option<String> {
     parse_manifest_file(jar_path).map(|m| m.id)
 }
 
-/// Group the jars in `directory` by the mod ID in their manifest, and move
-/// every jar but the most recently modified one in each group to
-/// `directory`/.old. Returns the filenames that were moved.
-pub fn dedupe_by_manifest_id(directory: &Path) -> std::io::Result<Vec<String>> {
+/// Groups the jars in `directory` by the mod ID in their manifest and moves every jar but one
+/// in each group to `directory`/.old. A file named in `resolved_filenames` is kept over one that
+/// isn't; otherwise the most recently modified file is kept. Returns the moved filenames.
+pub fn dedupe_by_manifest_id(
+    directory: &Path,
+    resolved_filenames: &HashSet<String>,
+) -> std::io::Result<Vec<String>> {
     let mut by_id: HashMap<String, Vec<(PathBuf, SystemTime)>> = HashMap::new();
 
     for entry in fs::read_dir(directory)? {
@@ -152,20 +155,38 @@ pub fn dedupe_by_manifest_id(directory: &Path) -> std::io::Result<Vec<String>> {
 
     let old_dir = directory.join(".old");
     let mut moved = Vec::new();
-    for mut files in by_id.into_values() {
+    for files in by_id.into_values() {
         if files.len() < 2 {
             continue;
         }
-        files.sort_by_key(|(_, modified)| *modified);
-        files.pop();
-        for (path, _) in files {
+
+        let keep_index = files
+            .iter()
+            .position(|(path, _)| {
+                path.file_name()
+                    .and_then(|f| f.to_str())
+                    .is_some_and(|f| resolved_filenames.contains(f))
+            })
+            .or_else(|| {
+                files
+                    .iter()
+                    .enumerate()
+                    .max_by_key(|(_, (_, modified))| *modified)
+                    .map(|(i, _)| i)
+            })
+            .unwrap_or(0);
+
+        for (i, (path, _)) in files.iter().enumerate() {
+            if i == keep_index {
+                continue;
+            }
             let Some(filename) = path.file_name() else {
                 continue;
             };
             let filename = filename.to_owned();
             fs::create_dir_all(&old_dir)?;
-            if fs::rename(&path, old_dir.join(&filename)).is_err() {
-                fs::remove_file(&path)?;
+            if fs::rename(path, old_dir.join(&filename)).is_err() {
+                fs::remove_file(path)?;
             }
             moved.push(filename.to_string_lossy().into_owned());
         }
@@ -176,8 +197,13 @@ pub fn dedupe_by_manifest_id(directory: &Path) -> std::io::Result<Vec<String>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_manifest, parse_toml_manifest};
-    use std::io::{Cursor, Write as _};
+    use super::{dedupe_by_manifest_id, parse_manifest, parse_toml_manifest};
+    use std::{
+        collections::HashSet,
+        fs,
+        io::{Cursor, Write as _},
+        time::{Duration, SystemTime},
+    };
     use zip::write::SimpleFileOptions;
 
     fn make_jar(entries: &[(&str, &str)]) -> Vec<u8> {
@@ -257,5 +283,71 @@ version="${file.jarVersion}"
 "#;
         let manifest = parse_toml_manifest(toml).unwrap();
         assert_eq!(manifest.version, None);
+    }
+
+    #[test]
+    fn dedupe_by_manifest_id_prefers_resolved_filename_over_newest_mtime() {
+        let dir = std::env::temp_dir().join(format!(
+            "hopper-dedupe-test-{}-{}",
+            std::process::id(),
+            "prefers_resolved"
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let jar = make_jar(&[("fabric.mod.json", r#"{"id":"tim_core","version":"1.7.3"}"#)]);
+        let pinned_path = dir.join("timcore-1.7.3.jar");
+        let latest_path = dir.join("timcore-1.8.0.jar");
+        fs::write(&pinned_path, &jar).unwrap();
+        fs::write(&latest_path, &jar).unwrap();
+
+        let older = SystemTime::now() - Duration::from_secs(3600);
+        fs::File::open(&pinned_path)
+            .unwrap()
+            .set_modified(older)
+            .unwrap();
+
+        let mut resolved = HashSet::new();
+        resolved.insert("timcore-1.7.3.jar".to_owned());
+
+        let moved = dedupe_by_manifest_id(&dir, &resolved).unwrap();
+
+        assert_eq!(moved, vec!["timcore-1.8.0.jar".to_owned()]);
+        assert!(pinned_path.exists());
+        assert!(!latest_path.exists());
+        assert!(dir.join(".old").join("timcore-1.8.0.jar").exists());
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn dedupe_by_manifest_id_falls_back_to_newest_mtime() {
+        let dir = std::env::temp_dir().join(format!(
+            "hopper-dedupe-test-{}-{}",
+            std::process::id(),
+            "falls_back"
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let jar = make_jar(&[("fabric.mod.json", r#"{"id":"tim_core","version":"1.7.3"}"#)]);
+        let older_path = dir.join("timcore-old.jar");
+        let newer_path = dir.join("timcore-new.jar");
+        fs::write(&older_path, &jar).unwrap();
+        fs::write(&newer_path, &jar).unwrap();
+
+        let older = SystemTime::now() - Duration::from_secs(3600);
+        fs::File::open(&older_path)
+            .unwrap()
+            .set_modified(older)
+            .unwrap();
+
+        let moved = dedupe_by_manifest_id(&dir, &HashSet::new()).unwrap();
+
+        assert_eq!(moved, vec!["timcore-old.jar".to_owned()]);
+        assert!(newer_path.exists());
+        assert!(!older_path.exists());
+
+        fs::remove_dir_all(&dir).unwrap();
     }
 }

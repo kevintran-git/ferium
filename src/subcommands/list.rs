@@ -114,7 +114,7 @@ pub async fn verbose(mods: &mut [Mod], markdown: bool) -> Result<()> {
     for project in &metadata {
         let matched = mods
             .iter_mut()
-            .find(|mod_| mod_.identifier == project.id())
+            .find(|mod_| mod_.identifier.is_same_as(&project.id()))
             .context("Could not find expected mod")?;
 
         matched.name = project.name().to_string();

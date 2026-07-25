@@ -56,7 +56,7 @@ pub async fn get_platform_downloadables(
 ) -> Result<(Vec<(ModIdentifier, DownloadData)>, bool)> {
     let progress_bar = Arc::new(Mutex::new(ProgressBar::new(0).with_style(STYLE_NO.clone())));
     let mut tasks = JoinSet::new();
-    let mut done_mods = Vec::new();
+    let mut done_mods: Vec<ModIdentifier> = Vec::new();
     let (mod_sender, mod_rcvr) = mpsc::channel();
 
     let mod_sender = Arc::new(mod_sender);
@@ -102,7 +102,10 @@ pub async fn get_platform_downloadables(
         if let Ok(mod_) = mod_rcvr.try_recv() {
             initial = false;
 
-            if done_mods.contains(&mod_.identifier) {
+            if done_mods
+                .iter()
+                .any(|done| done.is_same_as(&mod_.identifier))
+            {
                 continue;
             }
 

@@ -609,6 +609,21 @@ async fn list_markdown() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn list_verbose_pinned() {
+    assert!(matches!(
+        actual_main(get_args(
+            SubCommands::List {
+                verbose: true,
+                markdown: false
+            },
+            Some("one_profile_pinned"),
+        ))
+        .await,
+        Ok(()),
+    ));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn list_profiles() {
     assert!(matches!(
         actual_main(get_args(
