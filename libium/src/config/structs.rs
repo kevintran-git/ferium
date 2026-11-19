@@ -394,6 +394,8 @@ pub enum ConfigModIdentifier {
     PinnedCurseForgeProject(i32, StringOrInt),
     PinnedModrinthProject(String, String),
     PinnedGitHubRepository((String, String), String),
+
+    LocalFile(PathBuf),
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
@@ -402,6 +404,7 @@ pub enum ModIdentifier {
     CurseForgeProject(i32, Option<String>),
     ModrinthProject(String, Option<String>),
     GitHubRepository((String, String), Option<String>),
+    LocalFile(PathBuf),
 }
 
 impl From<ConfigModIdentifier> for ModIdentifier {
@@ -421,6 +424,7 @@ impl From<ConfigModIdentifier> for ModIdentifier {
             ConfigModIdentifier::PinnedGitHubRepository(p, v) => {
                 ModIdentifier::GitHubRepository(p, Some(v))
             }
+            ConfigModIdentifier::LocalFile(p) => ModIdentifier::LocalFile(p),
         }
     }
 }
@@ -442,6 +446,7 @@ impl From<ModIdentifier> for ConfigModIdentifier {
             ModIdentifier::GitHubRepository(p, Some(v)) => {
                 ConfigModIdentifier::PinnedGitHubRepository(p, v)
             }
+            ModIdentifier::LocalFile(p) => ConfigModIdentifier::LocalFile(p),
         }
     }
 }
@@ -454,6 +459,7 @@ impl ModIdentifier {
             (Self::CurseForgeProject(l0, _), Self::CurseForgeProject(r0, _)) => l0 == r0,
             (Self::ModrinthProject(l0, _), Self::ModrinthProject(r0, _)) => l0 == r0,
             (Self::GitHubRepository(l0, _), Self::GitHubRepository(r0, _)) => l0 == r0,
+            (Self::LocalFile(l0), Self::LocalFile(r0)) => l0 == r0,
             _ => false,
         }
     }
@@ -465,6 +471,7 @@ impl ModIdentifier {
             Self::CurseForgeProject(p, _) => Self::CurseForgeProject(p, Some(pin)),
             Self::ModrinthProject(p, _) => Self::ModrinthProject(p, Some(pin)),
             Self::GitHubRepository(p, _) => Self::GitHubRepository(p, Some(pin)),
+            Self::LocalFile(p) => Self::LocalFile(p),
         }
     }
 
@@ -475,6 +482,7 @@ impl ModIdentifier {
             Self::CurseForgeProject(p, _) => Self::CurseForgeProject(p, None),
             Self::ModrinthProject(p, _) => Self::ModrinthProject(p, None),
             Self::GitHubRepository(p, _) => Self::GitHubRepository(p, None),
+            Self::LocalFile(p) => Self::LocalFile(p),
         }
     }
 
@@ -484,6 +492,15 @@ impl ModIdentifier {
             Self::CurseForgeProject(_, pin)
             | Self::ModrinthProject(_, pin)
             | Self::GitHubRepository(_, pin) => pin.as_ref(),
+            Self::LocalFile(_) => None,
+        }
+    }
+
+    /// Returns the local path if this identifier refers to a local file/directory
+    pub fn local_path(&self) -> Option<&Path> {
+        match self {
+            Self::LocalFile(path) => Some(path.as_path()),
+            _ => None,
         }
     }
 }
@@ -561,5 +578,33 @@ impl ProjectKind {
                 .filter(|f| !matches!(f, Filter::ModLoaderPrefer(_) | Filter::ModLoaderAny(_)))
                 .collect()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_file_identifier_serde_and_compat() {
+        let id = ModIdentifier::LocalFile(PathBuf::from("/tmp/custom-shader.zip"));
+        let json = serde_json::to_string(&id).unwrap();
+        assert_eq!(json, r#"{"LocalFile":"/tmp/custom-shader.zip"}"#);
+
+        let parsed: ModIdentifier = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, id);
+        assert!(parsed.is_same_as(&id));
+        assert_eq!(parsed.pin(), None);
+        assert_eq!(parsed.local_path(), Some(Path::new("/tmp/custom-shader.zip")));
+
+        // Existing Modrinth/CurseForge/GitHub JSON still deserializes identically.
+        let mr: ModIdentifier = serde_json::from_str(r#"{"ModrinthProject":"R6NEzAwj"}"#).unwrap();
+        assert_eq!(mr, ModIdentifier::ModrinthProject("R6NEzAwj".into(), None));
+        let pinned: ModIdentifier =
+            serde_json::from_str(r#"{"PinnedModrinthProject":["R6NEzAwj","QJiYQisE"]}"#).unwrap();
+        assert_eq!(
+            pinned,
+            ModIdentifier::ModrinthProject("R6NEzAwj".into(), Some("QJiYQisE".into()))
+        );
     }
 }

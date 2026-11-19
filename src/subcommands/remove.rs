@@ -1,3 +1,4 @@
+use super::mod_matches;
 use anyhow::{bail, Result};
 use colored::Colorize as _;
 use inquire::MultiSelect;
@@ -30,10 +31,12 @@ pub fn remove(
                             format!("CF {:8}", id.to_string()),
                         ModIdentifier::ModrinthProject(id, _) => format!("MR {id:8}"),
                         ModIdentifier::GitHubRepository(..) => "GH".to_string(),
+                        ModIdentifier::LocalFile(..) => "LOCAL".to_string(),
                     },
                     match &mod_.identifier {
                         ModIdentifier::ModrinthProject(..)
-                        | ModIdentifier::CurseForgeProject(..) => mod_.name.clone(),
+                        | ModIdentifier::CurseForgeProject(..)
+                        | ModIdentifier::LocalFile(..) => mod_.name.clone(),
                         ModIdentifier::GitHubRepository((owner, repo), _) =>
                             format!("{owner}/{repo}"),
                     },
@@ -55,20 +58,7 @@ pub fn remove(
     } else {
         let mut items_to_remove = Vec::new();
         for to_remove in to_remove {
-            if let Some(index) = mods.iter().position(|mod_| {
-                mod_.name.eq_ignore_ascii_case(&to_remove)
-                    || match &mod_.identifier {
-                        ModIdentifier::CurseForgeProject(id, _) => id.to_string() == to_remove,
-                        ModIdentifier::ModrinthProject(id, _) => id == &to_remove,
-                        ModIdentifier::GitHubRepository((owner, name), _) => {
-                            format!("{owner}/{name}").eq_ignore_ascii_case(&to_remove)
-                        }
-                    }
-                    || mod_
-                        .slug
-                        .as_ref()
-                        .is_some_and(|slug| to_remove.eq_ignore_ascii_case(slug))
-            }) {
+            if let Some(index) = mods.iter().position(|mod_| mod_matches(mod_, &to_remove)) {
                 items_to_remove.push(index);
             } else {
                 bail!("No {noun} with ID or name {to_remove} found in this profile");

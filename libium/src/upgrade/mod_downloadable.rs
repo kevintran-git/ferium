@@ -26,6 +26,8 @@ pub enum Error {
     #[error("GitHub: {0:#?}")]
     GitHubError(#[from] octocrab::Error),
     NoFilesAvailable(#[from] super::NoFilesAvailableError),
+    #[error("Local files are installed from disk, not downloaded")]
+    LocalFile,
 }
 type Result<T> = std::result::Result<T, Error>;
 
@@ -77,6 +79,7 @@ impl Mod {
                     Ok(from_gh_asset(asset))
                 }
             }
+            ModIdentifier::LocalFile(_) => Err(Error::LocalFile),
             id => {
                 let download_files = gather_candidates(id).await?;
 
@@ -118,6 +121,7 @@ async fn gather_candidates(identifier: &ModIdentifier) -> Result<Vec<(Metadata, 
             .send()
             .await
             .map(|r| from_gh_releases(r.items))?,
+        ModIdentifier::LocalFile(_) => return Err(Error::LocalFile),
         _ => unreachable!(),
     })
 }

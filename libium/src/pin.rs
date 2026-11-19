@@ -9,6 +9,8 @@ pub enum Error {
     CurseForgeError(#[from] furse::Error),
     #[error("GitHub: {0:#?}")]
     GitHubError(#[from] octocrab::Error),
+    #[error("Local files cannot be pinned to a remote version")]
+    LocalFileNotPinnable,
 }
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -80,5 +82,6 @@ pub async fn available_pins(identifier: &ModIdentifier) -> Result<Vec<PinOption>
                 ),
             })
             .collect(),
+        ModIdentifier::LocalFile(_) => return Err(Error::LocalFileNotPinnable),
     })
 }

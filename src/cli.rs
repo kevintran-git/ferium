@@ -45,6 +45,7 @@ pub enum SubCommands {
         /// You can also use the project slug in the URL.
         /// The Curseforge project ID is specified at the top of the right sidebar under 'About Project'.
         /// The GitHub identifier is the repository's full name, e.g. `gorilla-devs/ferium`.
+        /// You can also pass a local file or directory path (e.g. `./my-mod.jar`).
         #[clap(required = true)]
         identifiers: Vec<String>,
 
@@ -143,12 +144,12 @@ pub enum SubCommands {
     /// Download and install the latest compatible version of your mods
     #[clap(visible_aliases = ["download", "install"])]
     Upgrade,
-    /// Add, list, remove, or upgrade shaderpacks tracked in the profile
+    /// Add, list, pin, remove, or upgrade shaderpacks tracked in the profile
     Shaderpack {
         #[clap(subcommand)]
         subcommand: Option<PackSubCommands>,
     },
-    /// Add, list, remove, or upgrade resourcepacks tracked in the profile
+    /// Add, list, pin, remove, or upgrade resourcepacks tracked in the profile
     Resourcepack {
         #[clap(subcommand)]
         subcommand: Option<PackSubCommands>,
@@ -157,9 +158,9 @@ pub enum SubCommands {
 
 #[derive(Clone, Debug, Subcommand)]
 pub enum PackSubCommands {
-    /// Add to the profile
+    /// Add to the profile (Modrinth/CurseForge/GitHub identifier, or a local file/directory path)
     Add {
-        /// The identifier(s) of the mod/project/repository
+        /// The identifier(s) or local file/directory path(s) to add
         #[clap(required = true)]
         identifiers: Vec<String>,
 
@@ -186,9 +187,31 @@ pub enum PackSubCommands {
         /// List of project IDs or case-insensitive names to remove
         names: Vec<String>,
     },
-    /// Download and install the latest compatible versions
+    /// Pin a pack to a specific version, so `upgrade` stops changing it.
+    /// Without a version, choose interactively from the pack's available versions.
+    Pin {
+        /// The project ID or case-insensitive name of the pack to pin.
+        /// If omitted, choose interactively from your tracked packs.
+        name: Option<String>,
+        /// The version to pin to.
+        /// If omitted, choose interactively from the pack's available versions.
+        version: Option<String>,
+    },
+    /// Remove a pack's pin, so `upgrade` installs its latest compatible version again.
+    /// Optionally, provide a list of names or IDs of the packs to unpin.
+    Unpin {
+        /// List of project IDs or case-insensitive names of packs to unpin.
+        /// If none are given, choose interactively from your pinned packs.
+        names: Vec<String>,
+    },
+    /// Download and install the latest compatible versions.
+    /// Optionally, provide a list of names or IDs to upgrade only those packs.
     #[clap(visible_aliases = ["download", "install"])]
-    Upgrade,
+    Upgrade {
+        /// Optional list of project IDs or case-insensitive names to upgrade.
+        /// If omitted, upgrades all tracked packs.
+        names: Vec<String>,
+    },
 }
 
 #[derive(Clone, Debug, Subcommand)]

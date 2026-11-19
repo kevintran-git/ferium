@@ -525,10 +525,22 @@ async fn pack_subcommand(
             subcommands::remove(profile, kind, names, noun)?;
             Ok(false)
         }
-        PackSubCommands::Upgrade => {
+        PackSubCommands::Pin { name, version } => {
             let profile = get_active_profile(config)?;
             check_empty(profile.mods(kind), &plural_noun)?;
-            subcommands::upgrade::upgrade_packs(profile, kind).await?;
+            subcommands::pin(profile, kind, name, version, noun).await?;
+            Ok(false)
+        }
+        PackSubCommands::Unpin { names } => {
+            let profile = get_active_profile(config)?;
+            check_empty(profile.mods(kind), &plural_noun)?;
+            subcommands::unpin(profile, kind, names, noun)?;
+            Ok(false)
+        }
+        PackSubCommands::Upgrade { names } => {
+            let profile = get_active_profile(config)?;
+            check_empty(profile.mods(kind), &plural_noun)?;
+            subcommands::upgrade::upgrade_packs(profile, kind, &names).await?;
             Ok(false)
         }
     }

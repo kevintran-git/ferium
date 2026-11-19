@@ -8,13 +8,19 @@ use libium::{
     pin::available_pins,
 };
 
-fn mod_matches(mod_: &Mod, name: &str) -> bool {
+pub fn mod_matches(mod_: &Mod, name: &str) -> bool {
     mod_.name.eq_ignore_ascii_case(name)
         || match &mod_.identifier {
             ModIdentifier::CurseForgeProject(id, _) => id.to_string() == name,
             ModIdentifier::ModrinthProject(id, _) => id == name,
             ModIdentifier::GitHubRepository((owner, repo), _) => {
                 format!("{owner}/{repo}").eq_ignore_ascii_case(name)
+            }
+            ModIdentifier::LocalFile(path) => {
+                path.to_string_lossy().eq_ignore_ascii_case(name)
+                    || path
+                        .file_name()
+                        .is_some_and(|f| f.to_string_lossy().eq_ignore_ascii_case(name))
             }
         }
         || mod_
@@ -27,8 +33,9 @@ fn mod_label(mod_: &Mod) -> String {
     format!(
         "{}{}",
         match &mod_.identifier {
-            ModIdentifier::ModrinthProject(..) | ModIdentifier::CurseForgeProject(..) =>
-                mod_.name.clone(),
+            ModIdentifier::ModrinthProject(..)
+            | ModIdentifier::CurseForgeProject(..)
+            | ModIdentifier::LocalFile(..) => mod_.name.clone(),
             ModIdentifier::GitHubRepository((owner, repo), _) => format!("{owner}/{repo}"),
         },
         mod_.identifier

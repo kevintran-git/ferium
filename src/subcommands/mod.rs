@@ -6,6 +6,6 @@ pub mod profile;
 mod remove;
 pub mod upgrade;
 pub use join::join;
-pub use pin::{pin, unpin};
+pub use pin::{mod_matches, pin, unpin};
 pub use remove::remove;
 pub use upgrade::upgrade;

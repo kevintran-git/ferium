@@ -8,7 +8,12 @@ use crate::{
     CURSEFORGE_API, GITHUB_API, MODRINTH_API,
 };
 use serde::Deserialize;
-use std::{collections::HashMap, str::FromStr};
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -38,6 +43,10 @@ pub enum Error {
     ModrinthError(#[from] ferinth::Error),
     #[error("CurseForge: {0}")]
     CurseForgeError(#[from] furse::Error),
+    #[error("Local file does not exist: {0}")]
+    LocalFileNotFound(String),
+    #[error("Failed to install local file: {0}")]
+    IoError(#[from] std::io::Error),
 }
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -90,7 +99,55 @@ struct ReleaseAsset {
     name: String,
 }
 
+fn looks_like_local_path(s: &str) -> bool {
+    if s.starts_with('/')
+        || s.starts_with("./")
+        || s.starts_with("../")
+        || s.starts_with("~/")
+        || s.contains('\\')
+    {
+        return true;
+    }
+    if !s.contains(':') {
+        let lower = s.to_ascii_lowercase();
+        if s.matches('/').count() > 1 || lower.ends_with(".zip") || lower.ends_with(".jar") {
+            return true;
+        }
+    }
+    false
+}
+
+fn expand_tilde(s: &str) -> PathBuf {
+    if let Some(rest) = s.strip_prefix("~/") {
+        return crate::BASE_DIRS.home_dir().join(rest);
+    }
+    PathBuf::from(s)
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let target = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_recursive(&entry.path(), &target)?;
+        } else {
+            fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
+}
+
 pub fn parse_id(id: String) -> Result<ModIdentifier> {
+    let expanded = expand_tilde(&id);
+    if looks_like_local_path(&id)
+        || expanded.is_file()
+        || (expanded.is_dir()
+            && (expanded.join("shaders").is_dir() || expanded.join("pack.mcmeta").is_file()))
+    {
+        return Ok(ModIdentifier::LocalFile(expanded));
+    }
+
     let split = id.split(':').collect_vec();
     let (id, pin) = match split.as_slice() {
         [id, pin] => (id, Some(pin)),
@@ -136,7 +193,12 @@ pub async fn add(
     let mut frontier = success_names
         .iter()
         .map(|(_, identifier)| identifier.clone())
-        .filter(|identifier| !matches!(identifier, ModIdentifier::GitHubRepository(..)))
+        .filter(|identifier| {
+            !matches!(
+                identifier,
+                ModIdentifier::GitHubRepository(..) | ModIdentifier::LocalFile(..)
+            )
+        })
         .collect_vec();
 
     while !frontier.is_empty() {
@@ -215,6 +277,8 @@ async fn add_batch(
     let mut gh_repo_ids = Vec::new();
     let mut gh_asset_ids = Vec::new();
 
+    let mut local_paths = Vec::new();
+
     let mut errors = Vec::new();
 
     for id in identifiers {
@@ -230,6 +294,9 @@ async fn add_batch(
             ModIdentifier::GitHubRepository(p, v) => {
                 gh_repo_ids.push(p);
                 gh_asset_ids.push(v);
+            }
+            ModIdentifier::LocalFile(p) => {
+                local_paths.push(p);
             }
         }
     }
@@ -610,5 +677,120 @@ async fn add_batch(
         }
     }
 
+    for path in local_paths {
+        let display_input = path.display().to_string();
+        let res = 'local_check: {
+            if !path.exists() {
+                break 'local_check Err(Error::LocalFileNotFound(display_input.clone()));
+            }
+            let canonical = match fs::canonicalize(&path) {
+                Ok(p) => p,
+                Err(err) => break 'local_check Err(Error::IoError(err)),
+            };
+            let Some(file_name) = canonical
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+            else {
+                break 'local_check Err(Error::InvalidIdentifier);
+            };
+            let display_name = canonical
+                .file_stem()
+                .map(|n| n.to_string_lossy().into_owned())
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| file_name.clone());
+
+            let identifier = ModIdentifier::LocalFile(canonical.clone());
+            if profile.mods(kind).iter().any(|mod_| {
+                mod_.identifier.is_same_as(&identifier)
+                    || mod_.name.eq_ignore_ascii_case(&display_name)
+                    || mod_
+                        .slug
+                        .as_deref()
+                        .is_some_and(|slug| slug.eq_ignore_ascii_case(&file_name))
+            }) {
+                break 'local_check Err(Error::AlreadyAdded);
+            }
+
+            let target_dir = profile.dir(kind);
+            if let Err(err) = fs::create_dir_all(&target_dir) {
+                break 'local_check Err(Error::IoError(err));
+            }
+            let dest = target_dir.join(&file_name);
+            let same_location = dest
+                .canonicalize()
+                .ok()
+                .is_some_and(|dest_canon| dest_canon == canonical);
+            if !same_location {
+                let copy_res = if canonical.is_dir() {
+                    copy_dir_recursive(&canonical, &dest)
+                } else {
+                    fs::copy(&canonical, &dest).map(|_| ())
+                };
+                if let Err(err) = copy_res {
+                    break 'local_check Err(Error::IoError(err));
+                }
+            }
+
+            profile.push_mod(
+                kind,
+                display_name.clone(),
+                identifier.clone(),
+                file_name,
+                override_profile,
+                filters.clone(),
+            );
+
+            Ok((display_name, identifier))
+        };
+        match res {
+            Ok((name, id)) => success_names.push((name, id)),
+            Err(err) => errors.push((display_input, err)),
+        }
+    }
+
     Ok((success_names, errors))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn parse_id_distinguishes_local_paths_and_remote_ids() {
+        assert_eq!(
+            parse_id("/tmp/my-shader.zip".to_owned()).unwrap(),
+            ModIdentifier::LocalFile(PathBuf::from("/tmp/my-shader.zip"))
+        );
+        assert_eq!(
+            parse_id("./my-shader.zip".to_owned()).unwrap(),
+            ModIdentifier::LocalFile(PathBuf::from("./my-shader.zip"))
+        );
+        assert_eq!(
+            parse_id("MakeUp-UltraFast-9.6 (Custom Sky).zip".to_owned()).unwrap(),
+            ModIdentifier::LocalFile(PathBuf::from("MakeUp-UltraFast-9.6 (Custom Sky).zip"))
+        );
+        assert_eq!(
+            parse_id("./MyCustomShaderFolder".to_owned()).unwrap(),
+            ModIdentifier::LocalFile(PathBuf::from("./MyCustomShaderFolder"))
+        );
+        assert_eq!(
+            parse_id("complementary-unbound".to_owned()).unwrap(),
+            ModIdentifier::ModrinthProject("complementary-unbound".to_owned(), None)
+        );
+        assert_eq!(
+            parse_id("R6NEzAwj:QJiYQisE".to_owned()).unwrap(),
+            ModIdentifier::ModrinthProject("R6NEzAwj".to_owned(), Some("QJiYQisE".to_owned()))
+        );
+        assert_eq!(
+            parse_id("306612".to_owned()).unwrap(),
+            ModIdentifier::CurseForgeProject(306612, None)
+        );
+        assert_eq!(
+            parse_id("gorilla-devs/ferium".to_owned()).unwrap(),
+            ModIdentifier::GitHubRepository(
+                ("gorilla-devs".to_owned(), "ferium".to_owned()),
+                None
+            )
+        );
+    }
+
 }

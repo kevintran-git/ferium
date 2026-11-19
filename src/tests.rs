@@ -791,3 +791,256 @@ async fn delete_profile_keeps_output_dir_without_confirmation() {
     remove_dir_all(&output_dir).unwrap();
 }
 
+
+#[tokio::test(flavor = "multi_thread")]
+async fn local_shaderpack_add_list_upgrade_pin_remove() {
+    let base = std::env::temp_dir().join(format!(
+        "hopper-cli-local-shader-{:x}",
+        rand::random::<u64>()
+    ));
+    let mods_dir = base.join("instance").join("mods");
+    let shaderpacks_dir = base.join("instance").join("shaderpacks");
+    let config_file = base.join("config.json");
+    create_dir_all(&mods_dir).unwrap();
+
+    let cfg = serde_json::json!({
+        "version": 2,
+        "profiles": [{
+            "name": "LocalTest",
+            "output_dir": mods_dir,
+            "filters": [{"GameVersionStrict": ["1.21.1"]}],
+            "mods": []
+        }]
+    });
+    write(&config_file, serde_json::to_string_pretty(&cfg).unwrap()).unwrap();
+
+    let src_zip = base.join("MakeUp-CustomSky.zip");
+    write(&src_zip, b"v1-bytes").unwrap();
+
+    // Add local shaderpack
+    actual_main(Hopper {
+        subcommand: SubCommands::Shaderpack {
+            subcommand: Some(PackSubCommands::Add {
+                identifiers: vec![src_zip.to_string_lossy().into_owned()],
+                force: false,
+                filters: Box::default(),
+            }),
+        },
+        config_file: Some(config_file.clone()),
+        ..DEFAULT
+    })
+    .await
+    .unwrap();
+
+    let installed = shaderpacks_dir.join("MakeUp-CustomSky.zip");
+    assert_eq!(std::fs::read(&installed).unwrap(), b"v1-bytes");
+    let saved_cfg = read_to_string(&config_file).unwrap();
+    assert!(saved_cfg.contains("LocalFile"));
+
+    // Create a settings sidecar and update the source zip; upgrade should update the zip AND preserve the .txt
+    let sidecar = shaderpacks_dir.join("MakeUp-CustomSky.zip.txt");
+    write(&sidecar, b"VANILLA_SKY=1\n").unwrap();
+    write(&src_zip, b"v2-updated-bytes").unwrap();
+
+    actual_main(Hopper {
+        subcommand: SubCommands::Shaderpack {
+            subcommand: Some(PackSubCommands::Upgrade { names: vec![] }),
+        },
+        config_file: Some(config_file.clone()),
+        ..DEFAULT
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(std::fs::read(&installed).unwrap(), b"v2-updated-bytes");
+    assert_eq!(std::fs::read(&sidecar).unwrap(), b"VANILLA_SKY=1\n");
+
+    // Delete source zip; upgrade should keep installed copy in place instead of moving it to .old
+    std::fs::remove_file(&src_zip).unwrap();
+    actual_main(Hopper {
+        subcommand: SubCommands::Shaderpack {
+            subcommand: Some(PackSubCommands::Upgrade { names: vec![] }),
+        },
+        config_file: Some(config_file.clone()),
+        ..DEFAULT
+    })
+    .await
+    .unwrap();
+    assert_eq!(std::fs::read(&installed).unwrap(), b"v2-updated-bytes");
+    assert_eq!(std::fs::read(&sidecar).unwrap(), b"VANILLA_SKY=1\n");
+
+    // List (basic and verbose) should succeed without hitting network
+    actual_main(Hopper {
+        subcommand: SubCommands::Shaderpack {
+            subcommand: Some(PackSubCommands::List {
+                verbose: true,
+                markdown: false,
+            }),
+        },
+        config_file: Some(config_file.clone()),
+        ..DEFAULT
+    })
+    .await
+    .unwrap();
+
+    // Pinning a local file returns a clear error
+    assert!(actual_main(Hopper {
+        subcommand: SubCommands::Shaderpack {
+            subcommand: Some(PackSubCommands::Pin {
+                name: Some("MakeUp-CustomSky".to_owned()),
+                version: Some("1.0".to_owned()),
+            }),
+        },
+        config_file: Some(config_file.clone()),
+        ..DEFAULT
+    })
+    .await
+    .is_err());
+
+    // Selective upgrade with unknown name fails cleanly
+    assert!(actual_main(Hopper {
+        subcommand: SubCommands::Shaderpack {
+            subcommand: Some(PackSubCommands::Upgrade {
+                names: vec!["nonexistent-pack".to_owned()],
+            }),
+        },
+        config_file: Some(config_file.clone()),
+        ..DEFAULT
+    })
+    .await
+    .is_err());
+
+    // Remove by name
+    actual_main(Hopper {
+        subcommand: SubCommands::Shaderpack {
+            subcommand: Some(PackSubCommands::Remove {
+                names: vec!["MakeUp-CustomSky".to_owned()],
+            }),
+        },
+        config_file: Some(config_file.clone()),
+        ..DEFAULT
+    })
+    .await
+    .unwrap();
+
+    let saved_cfg = read_to_string(&config_file).unwrap();
+    assert!(!saved_cfg.contains("LocalFile"));
+
+    let _ = remove_dir_all(base);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn libium_add_local_shaderpack_file_dir_inplace_and_missing() {
+    use libium::{
+        add::{parse_id, Error as AddError},
+        config::structs::{Profile, ProjectKind},
+    };
+    let root = std::env::temp_dir().join(format!(
+        "hopper-libium-add-local-{:x}",
+        rand::random::<u64>()
+    ));
+    let mods_dir = root.join("instance").join("mods");
+    let shaderpacks_dir = root.join("instance").join("shaderpacks");
+    create_dir_all(&mods_dir).unwrap();
+
+    let mut profile = Profile::new(
+        "test".to_owned(),
+        mods_dir,
+        vec!["1.21.1".to_owned()],
+        ModLoader::Fabric,
+    );
+
+    // 1. Add external local zip -> copied into shaderpacks/ and tracked.
+    let src_zip = root.join("MakeUp-Custom.zip");
+    write(&src_zip, b"shader-bytes").unwrap();
+    let (ok, err) = libium::add(
+        &mut profile,
+        ProjectKind::ShaderPack,
+        vec![parse_id(src_zip.to_string_lossy().into_owned()).unwrap()],
+        true,
+        false,
+        vec![],
+    )
+    .await
+    .unwrap();
+    assert_eq!(ok.len(), 1);
+    assert!(err.is_empty());
+    assert_eq!(
+        std::fs::read(shaderpacks_dir.join("MakeUp-Custom.zip")).unwrap(),
+        b"shader-bytes"
+    );
+    assert_eq!(profile.shaderpacks.len(), 1);
+    assert_eq!(profile.shaderpacks[0].name, "MakeUp-Custom");
+
+    // Adding the same local file again reports AlreadyAdded.
+    let (ok2, err2) = libium::add(
+        &mut profile,
+        ProjectKind::ShaderPack,
+        vec![parse_id(src_zip.to_string_lossy().into_owned()).unwrap()],
+        true,
+        false,
+        vec![],
+    )
+    .await
+    .unwrap();
+    assert!(ok2.is_empty());
+    assert!(matches!(err2.as_slice(), [(_, AddError::AlreadyAdded)]));
+
+    // 2. Add file already inside shaderpacks/ -> must NOT truncate it.
+    let inplace_zip = shaderpacks_dir.join("InPlaceShader.zip");
+    write(&inplace_zip, b"preserve-me").unwrap();
+    let (ok3, err3) = libium::add(
+        &mut profile,
+        ProjectKind::ShaderPack,
+        vec![parse_id(inplace_zip.to_string_lossy().into_owned()).unwrap()],
+        true,
+        false,
+        vec![],
+    )
+    .await
+    .unwrap();
+    assert_eq!(ok3.len(), 1);
+    assert!(err3.is_empty());
+    assert_eq!(std::fs::read(&inplace_zip).unwrap(), b"preserve-me");
+
+    // 3. Add local unzipped shader directory.
+    let src_dir = root.join("MyUnzippedShader");
+    create_dir_all(src_dir.join("shaders")).unwrap();
+    write(src_dir.join("shaders").join("final.fsh"), b"// glsl").unwrap();
+    let (ok4, err4) = libium::add(
+        &mut profile,
+        ProjectKind::ShaderPack,
+        vec![parse_id(src_dir.to_string_lossy().into_owned()).unwrap()],
+        true,
+        false,
+        vec![],
+    )
+    .await
+    .unwrap();
+    assert_eq!(ok4.len(), 1);
+    assert!(err4.is_empty());
+    assert_eq!(
+        std::fs::read(shaderpacks_dir.join("MyUnzippedShader/shaders/final.fsh")).unwrap(),
+        b"// glsl"
+    );
+
+    // 4. Missing local file returns LocalFileNotFound.
+    let missing = root.join("missing.zip");
+    let (ok5, err5) = libium::add(
+        &mut profile,
+        ProjectKind::ShaderPack,
+        vec![parse_id(missing.to_string_lossy().into_owned()).unwrap()],
+        true,
+        false,
+        vec![],
+    )
+    .await
+    .unwrap();
+    assert!(ok5.is_empty());
+    assert!(matches!(
+        err5.as_slice(),
+        [(_, AddError::LocalFileNotFound(_))]
+    ));
+
+    let _ = remove_dir_all(root);
+}

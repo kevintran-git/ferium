@@ -12,12 +12,14 @@ use libium::{
     CURSEFORGE_API, GITHUB_API, MODRINTH_API,
 };
 use octocrab::models::{repos::Release, Repository};
+use std::path::{Path, PathBuf};
 use tokio::task::JoinSet;
 
 enum ListData {
     CF(Box<CFMod>),
     MD(Box<Project>, Vec<TeamMember>),
     GH(Box<Repository>, Vec<Release>),
+    Local(String, PathBuf),
 }
 impl ListData {
     fn name(&self) -> &str {
@@ -25,6 +27,7 @@ impl ListData {
             ListData::CF(p) => &p.name,
             ListData::MD(p, _) => &p.title,
             ListData::GH(p, _) => &p.name,
+            ListData::Local(name, _) => name,
         }
     }
 
@@ -37,14 +40,16 @@ impl ListData {
                 (p.owner.clone().unwrap().login, p.name.clone()),
                 None,
             ),
+            ListData::Local(_, path) => ModIdentifier::LocalFile(path.clone()),
         }
     }
 
-    fn slug(&self) -> &str {
+    fn slug(&self) -> Option<&str> {
         match self {
-            ListData::CF(p) => &p.slug,
-            ListData::MD(p, _) => &p.slug,
-            ListData::GH(p, _) => &p.name,
+            ListData::CF(p) => Some(&p.slug),
+            ListData::MD(p, _) => Some(&p.slug),
+            ListData::GH(p, _) => Some(&p.name),
+            ListData::Local(..) => None,
         }
     }
 }
@@ -57,6 +62,7 @@ pub async fn verbose(mods: &mut [Mod], markdown: bool) -> Result<()> {
     let mut tasks = JoinSet::new();
     let mut mr_ids = Vec::new();
     let mut cf_ids = Vec::new();
+    let mut local_entries = Vec::new();
     for mod_ in mods.iter() {
         match mod_.identifier.clone() {
             ModIdentifier::CurseForgeProject(project_id, _) => cf_ids.push(project_id),
@@ -70,6 +76,7 @@ pub async fn verbose(mods: &mut [Mod], markdown: bool) -> Result<()> {
                     ))
                 });
             }
+            ModIdentifier::LocalFile(path) => local_entries.push((mod_.name.clone(), path)),
         }
     }
 
@@ -105,6 +112,9 @@ pub async fn verbose(mods: &mut [Mod], markdown: bool) -> Result<()> {
         let (repo, releases) = res?;
         metadata.push(ListData::GH(Box::new(repo), releases.items));
     }
+    for (name, path) in local_entries {
+        metadata.push(ListData::Local(name, path));
+    }
     metadata.sort_unstable_by_key(|e| e.name().to_lowercase());
 
     if !markdown {
@@ -118,7 +128,9 @@ pub async fn verbose(mods: &mut [Mod], markdown: bool) -> Result<()> {
             .context("Could not find expected mod")?;
 
         matched.name = project.name().to_string();
-        matched.slug = Some(project.slug().to_string());
+        if let Some(slug) = project.slug() {
+            matched.slug = Some(slug.to_string());
+        }
 
         let pin = pin_of(&matched.identifier);
 
@@ -127,12 +139,14 @@ pub async fn verbose(mods: &mut [Mod], markdown: bool) -> Result<()> {
                 ListData::CF(p) => curseforge_md(p, pin),
                 ListData::MD(p, t) => modrinth_md(p, t, pin),
                 ListData::GH(p, _) => github_md(p, pin),
+                ListData::Local(name, path) => local_md(name, path),
             }
         } else {
             match project {
                 ListData::CF(p) => curseforge(p, pin),
                 ListData::MD(p, t) => modrinth(p, t, pin),
                 ListData::GH(p, r) => github(p, r, pin),
+                ListData::Local(name, path) => local(name, path),
             }
         }
     }
@@ -191,6 +205,7 @@ fn pin_of(identifier: &ModIdentifier) -> Option<&str> {
         ModIdentifier::CurseForgeProject(_, pin)
         | ModIdentifier::ModrinthProject(_, pin)
         | ModIdentifier::GitHubRepository(_, pin) => pin.as_deref(),
+        ModIdentifier::LocalFile(_) => None,
     }
 }
 
@@ -203,15 +218,34 @@ fn mod_line(mod_: &Mod) -> String {
             ModIdentifier::ModrinthProject(id, _) =>
                 format!("{} {:8}", "MR".green(), id.dimmed()),
             ModIdentifier::GitHubRepository(..) => "GH".purple().to_string(),
+            ModIdentifier::LocalFile(..) => format!("{:11}", "LOCAL").cyan().to_string(),
         },
         match &mod_.identifier {
-            ModIdentifier::ModrinthProject(..) | ModIdentifier::CurseForgeProject(..) =>
-                mod_.name.bold().to_string(),
+            ModIdentifier::ModrinthProject(..)
+            | ModIdentifier::CurseForgeProject(..)
+            | ModIdentifier::LocalFile(..) => mod_.name.bold().to_string(),
             ModIdentifier::GitHubRepository((owner, repo), _) =>
                 format!("{}/{}", owner.dimmed(), repo.bold()),
         },
         pin_of(&mod_.identifier).map_or(String::new(), |pin| format!("\n   📌 {}", pin.dimmed())),
     )
+}
+
+pub fn local(name: &str, path: &Path) {
+    println!(
+        "\n{}\n\n  Source:       {}\n  Path:         {}",
+        name.bold(),
+        "Local File".dimmed(),
+        path.display().to_string().dimmed(),
+    );
+}
+
+pub fn local_md(name: &str, path: &Path) {
+    println!(
+        "\n**{}**\n\n|             |             |\n|-------------|-------------|\n| Source      | Local `{}` |",
+        name.trim(),
+        path.display(),
+    );
 }
 
 pub fn curseforge(project: &CFMod, pin: Option<&str>) {
